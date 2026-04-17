@@ -156,8 +156,25 @@ export default function Dashboard() {
   // Fetch on mount and re-fetch when product changes
   useEffect(() => {
     fetchData(selectedProductId);
+    
+    // Polling fallback
     const id = setInterval(() => fetchData(selectedProductId), 10000);
-    return () => clearInterval(id);
+
+    // Reactive Refresh Listener (Magic Sync)
+    const handleReactiveRefresh = (e: any) => {
+      console.log(`[dashboard] Reactive refresh triggered for product: ${e.detail?.productId}`);
+      // If the refresh is for the currently selected product (or no product selected), refresh now
+      if (!selectedProductId || e.detail?.productId === selectedProductId) {
+        fetchData(selectedProductId);
+      }
+    };
+
+    window.addEventListener('xenon-refresh-stats' as any, handleReactiveRefresh);
+    
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('xenon-refresh-stats' as any, handleReactiveRefresh);
+    };
   }, [selectedProductId, fetchData]);
 
   // ── Derived state ─────────────────────────────────────────────────────────

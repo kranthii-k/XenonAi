@@ -40,7 +40,22 @@ export async function GET() {
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Periodic heartbeat to keep connection alive
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(': heartbeat\n\n'));
+        } catch {
+          clearInterval(heartbeat);
+        }
+      }, 15000);
+
       for (const review of batch) {
+        // Stop streaming if client closed connection
+        if (controller.desiredSize === null) {
+          clearInterval(heartbeat);
+          return;
+        }
+
         const payload = JSON.stringify({
           id: review.id,
           product_id: review.product_id,
@@ -50,10 +65,14 @@ export async function GET() {
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
         await new Promise(r => setTimeout(r, 800));
       }
-      // Send a close event so the client knows the stream ended
+      
+      clearInterval(heartbeat);
       controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`));
       controller.close();
     },
+    cancel() {
+      console.log('[feed] Client disconnected.');
+    }
   });
 
   return new Response(stream, {
