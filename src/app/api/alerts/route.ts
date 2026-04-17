@@ -1,13 +1,21 @@
 import { db } from "@/lib/db";
 import { alerts } from "@/lib/db/schema";
 import { NextResponse } from "next/server";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const productId = searchParams.get('product_id');
+
   try {
-    const data = db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(10).all();
+    let query = db.select().from(alerts).orderBy(desc(alerts.createdAt));
+    
+    const data = productId
+      ? query.where(eq(alerts.productId, productId)).limit(20).all()
+      : query.limit(20).all();
+
     return NextResponse.json(data);
   } catch (error) {
     console.error("alerts error", error);

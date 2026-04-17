@@ -48,6 +48,7 @@ export default function Dashboard() {
   const [trendData, setTrendData] = useState<any[]>(fallbackTrendData);
   const [activeAlertsList, setActiveAlertsList] = useState<any[]>([]);
   const [reviewsCount, setReviewsCount] = useState(0);
+  const [avgSentiment, setAvgSentiment] = useState(75);
 
   const fetchDashboardData = async () => {
     try {
@@ -60,21 +61,22 @@ export default function Dashboard() {
       const tData = await tRes.json();
       const aData = await aRes.json();
       
-      if (fData && fData.features && fData.features.length > 0) {
-         setFeatureData(fData.features);
+      if (fData && fData.features) {
+         setFeatureData(fData.features.length > 0 ? fData.features : fallbackFeatureData);
+         if (fData.total_records !== undefined) setReviewsCount(fData.total_records);
+         if (fData.global_sentiment_score !== undefined) setAvgSentiment(fData.global_sentiment_score);
       }
       
-      if (tData && tData.length > 0) {
+      if (tData && Array.isArray(tData) && tData.length > 0) {
          const formattedTrends = tData.map((t: any) => ({
-           batch: `B-${t.batchIndex}`,
+           batch: `B-${t.batchIndex.toString().slice(-4)}`, // Show last 4 digits of index for brevity
            negativeRate: Number(t.negativePct).toFixed(1),
            isAnomaly: t.isAnomaly
          }));
          setTrendData(formattedTrends);
-         setReviewsCount(tData.length * 10);
       }
       
-      if (aData && aData.length >= 0) setActiveAlertsList(aData);
+      if (aData && Array.isArray(aData)) setActiveAlertsList(aData);
     } catch(err) {
       console.error(err);
     }
@@ -137,7 +139,7 @@ export default function Dashboard() {
         {/* 4 Metric Cards */}
         <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard title="Processed Records" value={reviewsCount.toLocaleString()} sub="Live ingestion tracked" icon={<MessageSquare className="w-5 h-5 text-blue-400" />} />
-          <MetricCard title="Avg Sentiment" value="78%" sub="+2.5% from last batch" icon={<Activity className="w-5 h-5 text-emerald-400" />} />
+          <MetricCard title="Avg Sentiment" value={`${avgSentiment}%`} sub="+2.5% from last batch" icon={<Activity className="w-5 h-5 text-emerald-400" />} />
           <MetricCard title="Active Alerts" value={activeAlertsList.length.toString()} sub="Requires attention" icon={<AlertTriangle className="w-5 h-5 text-rose-400" />} highlight={activeAlertsList.length > 0} />
           <MetricCard title="Last Z-Score" value={trendData.length > 0 ? `${Number(trendData[trendData.length-1].negativeRate).toFixed(1)}σ` : "0"} sub="Calculated variance" icon={<TrendingUp className="w-5 h-5 text-purple-400" />} />
         </motion.div>
