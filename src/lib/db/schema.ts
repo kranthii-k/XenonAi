@@ -3,7 +3,7 @@ import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 export const reviews = sqliteTable('reviews', {
   id: text('id').primaryKey(),
   productId: text('product_id').notNull(),
-  rawText: text('raw_text').notNull(),          // original, pre-normalization
+  rawText: text('raw_text').notNull().default(''),          // original, pre-normalization
   text: text('text').notNull(),                  // normalized text used for analysis
   createdAt: text('created_at').notNull(),
   batchId: text('batch_id'),
