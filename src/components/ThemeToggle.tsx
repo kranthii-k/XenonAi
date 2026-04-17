@@ -6,7 +6,7 @@ import { Moon, Sun } from "lucide-react";
 import { motion } from "framer-motion";
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -17,14 +17,14 @@ export function ThemeToggle() {
 
   return (
     <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
       className="relative flex items-center justify-center w-10 h-10 rounded-full bg-white/5 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors duration-300"
       aria-label="Toggle Dark Mode"
     >
       <div className="relative flex items-center justify-center w-full h-full">
         <motion.div
           initial={false}
-          animate={{ scale: theme === "dark" ? 0 : 1, opacity: theme === "dark" ? 0 : 1 }}
+          animate={{ scale: resolvedTheme === "dark" ? 0 : 1, opacity: resolvedTheme === "dark" ? 0 : 1 }}
           transition={{ duration: 0.3, ease: "easeInOut" }}
           className="absolute"
         >
@@ -32,7 +32,7 @@ export function ThemeToggle() {
         </motion.div>
         <motion.div
           initial={false}
-          animate={{ scale: theme === "dark" ? 1 : 0, opacity: theme === "dark" ? 1 : 0 }}
+          animate={{ scale: resolvedTheme === "dark" ? 1 : 0, opacity: resolvedTheme === "dark" ? 1 : 0 }}
           transition={{ duration: 0.3, ease: "easeInOut" }}
           className="absolute"
         >
