@@ -1,5 +1,3 @@
-import ARIMA from 'arima';
-
 export interface ForecastPoint {
   cohort: string;
   actual: number | null;
@@ -9,6 +7,7 @@ export interface ForecastPoint {
 /**
  * ArimaEngine
  * Wrapper around the 'arima' Wasm library for sentiment forecasting.
+ * Uses dynamic require to prevent Next.js Turbopack from bundling it for the browser.
  */
 export class ArimaEngine {
   /**
@@ -27,6 +26,12 @@ export class ArimaEngine {
     }
 
     try {
+      // Bypass Webpack/Turbopack static analysis by hiding the require
+      const req = typeof window === 'undefined' ? eval('require') : null;
+      if (!req) throw new Error('Not running in Node.js environment');
+      
+      const ARIMA = req('arima');
+      
       const arima = new ARIMA({
         auto: true,
         p: 1, d: 0, q: 1,

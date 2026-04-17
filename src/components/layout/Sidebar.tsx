@@ -6,8 +6,8 @@ import { LayoutDashboard, UploadCloud, AlertTriangle, UserCheck, Settings } from
 import { motion } from "framer-motion";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
   { href: "/upload", label: "Ingestion", icon: <UploadCloud size={20} /> },
+  { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
   { href: "/alerts", label: "Active Alerts", icon: <AlertTriangle size={20} /> },
   { href: "/review-queue", label: "Review Queue", icon: <UserCheck size={20} /> },
 ];

@@ -205,19 +205,29 @@ export default function UploadPage() {
           </p>
         </header>
 
-        {/* Product ID */}
+        {/* Product Selector */}
         <div className="space-y-2">
           <label className="text-sm text-slate-400 font-medium" htmlFor="product-id-input">
-            Product ID <span className="text-slate-600">(optional — defaults to "default-product")</span>
+            Product <span className="text-slate-600">(required)</span>
           </label>
-          <input
+          <select
             id="product-id-input"
-            type="text"
             value={productId}
             onChange={e => setProductId(e.target.value)}
-            placeholder="e.g. samsung-galaxy-s24"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 transition-colors"
-          />
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
+          >
+            <option value="" className="bg-slate-900">— Select a product —</option>
+            <optgroup label="Electronics" className="bg-slate-900">
+              <option value="smartphones" className="bg-slate-900">📱 Smartphones</option>
+              <option value="earbuds" className="bg-slate-900">🎧 Earbuds</option>
+              <option value="laptops" className="bg-slate-900">💻 Laptops</option>
+            </optgroup>
+            <optgroup label="Home Appliances" className="bg-slate-900">
+              <option value="geyser" className="bg-slate-900">🔥 Geyser</option>
+              <option value="refrigerator" className="bg-slate-900">🧊 Refrigerator</option>
+              <option value="microwave-oven" className="bg-slate-900">📡 Microwave Oven</option>
+            </optgroup>
+          </select>
         </div>
 
         {/* Mode Toggle */}

@@ -50,9 +50,9 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="min-h-full flex bg-background text-foreground transition-colors duration-300">
+      <body className="h-screen overflow-hidden flex bg-background text-foreground transition-colors duration-300">
         <Sidebar />
-        <main className="flex-1 flex flex-col h-screen overflow-y-auto custom-scrollbar relative overflow-x-hidden">
+        <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden custom-scrollbar relative">
           {children}
         </main>
       </body>
