@@ -1,10 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { db } from '../db';
-import { reviews, featureSentiments, ingestionJobs } from '../db/schema';
+import { reviews, featureSentiments, ingestionJobs, trends, alerts } from '../db/schema';
 import { buildExtractionPrompt } from '../prompts/extract';
 import { detectLanguage, buildLanguageInstruction } from './translator';
+import { computeRollingTrends } from './trends';
 import * as crypto from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 
 // Use correct model per README spec; fall back to env override for flexibility
 const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-5';
@@ -39,16 +40,28 @@ export async function analyzeReview(
   const languagePrefix = buildLanguageInstruction(langResult);
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn("No Anthropic API Key found. Using mock fallback for testing.");
-    if (reviewText.includes("absolutely stunning, but the battery")) {
-       return { overall_sentiment: "negative", language_detected: "en", is_sarcastic: false, is_ambiguous: false, overall_confidence: 0.9, translated_text: null, sarcasm_reason: null, ambiguity_reason: null, features: [{ feature: "camera", sentiment: "positive", confidence: 0.95, quote: "absolutely stunning" }, { feature: "battery_life", sentiment: "negative", confidence: 0.99, quote: "battery life is terrible" }] };
+    
+    // Default mock results to ensure trends/alerts can be tested
+    const result: ClaudeExtractionResult = {
+      overall_sentiment: "negative",
+      language_detected: "en",
+      is_sarcastic: reviewText.length > 100,
+      is_ambiguous: reviewText.length < 20,
+      overall_confidence: 0.9,
+      translated_text: null,
+      sarcasm_reason: reviewText.length > 100 ? "Wordy complaint" : null,
+      ambiguity_reason: reviewText.length < 20 ? "Too short" : null,
+      features: [
+        { feature: "battery_life", sentiment: "negative", confidence: 0.9, quote: "battery test" },
+        { feature: "camera", sentiment: "positive", confidence: 0.8, quote: "camera test" }
+      ]
+    };
+
+    if (reviewText.includes("absolutely stunning")) {
+       result.features.push({ feature: "display", sentiment: "positive", confidence: 1.0, quote: "stunning" });
     }
-    if (reviewText.includes("3 hours to charge to 50%")) {
-       return { overall_sentiment: "negative", language_detected: "en", is_sarcastic: true, is_ambiguous: false, overall_confidence: 0.85, translated_text: null, sarcasm_reason: "User claims 3 hours is revolutionary garbage", ambiguity_reason: null, features: [{ feature: "battery_life", sentiment: "negative", confidence: 0.88, quote: "revolutionary piece of garbage" }] };
-    }
-    if (reviewText.includes("Bhai ye phone ekdum")) {
-       return { overall_sentiment: "negative", language_detected: "hi", is_sarcastic: false, is_ambiguous: false, overall_confidence: 0.9, translated_text: null, sarcasm_reason: null, ambiguity_reason: null, features: [{ feature: "display", sentiment: "negative", confidence: 0.9, quote: "screen break" }, { feature: "customer_support", sentiment: "negative", confidence: 0.9, quote: "customer care is not replying" }] };
-    }
-    return { overall_sentiment: "neutral", language_detected: "en", is_sarcastic: false, is_ambiguous: true, overall_confidence: 0.5, translated_text: null, sarcasm_reason: null, ambiguity_reason: "mocked", features: [] };
+    
+    return result;
   }
   const response = await client.messages.create({
     model: MODEL,
@@ -172,11 +185,116 @@ export async function analyzeBatch(
     await new Promise(r => setTimeout(r, 100));
   }
 
-  // Mark job done even if we fell through without updating above
+  // Finalize job and trigger trend analysis
   if (jobId) {
     await db
       .update(ingestionJobs)
       .set({ status: 'done', updatedAt: new Date().toISOString() })
       .where(eq(ingestionJobs.id, jobId));
+  }
+
+  const productId = inputReviews[0]?.product_id;
+  if (productId) {
+    await updateProductTrends(productId).catch(err => 
+      console.error('[analyzer] Trend update failed:', err)
+    );
+  }
+}
+
+/**
+ * Recalculates trends and alerts for a product based on the latest N reviews.
+ * This is triggered after every successful ingestion batch.
+ */
+export async function updateProductTrends(productId: string): Promise<void> {
+  // 1. Fetch the last 150 reviews + their features for this product
+  // We need enough history for a rolling window comparison (e.g. 50 vs 50)
+  const lastReviews = await db.query.reviews.findMany({
+    where: eq(reviews.productId, productId),
+    orderBy: [desc(reviews.createdAt)],
+    limit: 150,
+  });
+
+  if (lastReviews.length < 10) return; // Not enough data for trends yet
+
+  // Fetch all features for these reviews in one go
+  const reviewIds = lastReviews.map(r => r.id);
+  const allFeatures = await db.query.featureSentiments.findMany({
+    where: (fs, { inArray }) => inArray(fs.reviewId, reviewIds),
+  });
+
+  // 2. Map DB results to AnalyzedReview type for computeRollingTrends
+  const mappedReviews = lastReviews.map(r => ({
+    id: r.id,
+    product_id: r.productId,
+    text: r.text,
+    created_at: r.createdAt,
+    language: r.language ?? 'en',
+    overall_sentiment: (r.overallSentiment ?? 'neutral') as any,
+    confidence: r.confidence ?? 0,
+    is_sarcastic: r.isSarcastic ?? false,
+    is_ambiguous: r.isAmbiguous ?? false,
+    features: allFeatures
+      .filter(f => f.reviewId === r.id)
+      .map(f => ({
+        feature: f.feature,
+        sentiment: f.sentiment as any,
+        confidence: f.confidence,
+        quote: f.quote,
+      })),
+  }));
+
+  // 3. Run statistical trend detection
+  const trendResults = computeRollingTrends(mappedReviews.reverse()); 
+  console.log(`[analyzer] Computed trends for ${productId}: ${trendResults.length} features analyzed.`);
+
+  // 4. Persist results
+  const now = new Date().toISOString();
+  const batchIndex = Math.floor(Date.now() / 1000); // Unique index for this trend snapshot
+
+  for (const t of trendResults) {
+    // Only store trends with significant volume or shifts to keep DB clean
+    if (t.current_negative_pct > 0 || t.current_positive_pct > 0) {
+      await db.insert(trends).values({
+        id: crypto.randomUUID(),
+        productId,
+        feature: t.feature,
+        batchIndex,
+        negativePct: t.current_negative_pct * 100,
+        positivePct: t.current_positive_pct * 100,
+        zScore: t.z_score,
+        isAnomaly: t.is_anomaly,
+      });
+    }
+
+    // Generate alerts for systemic issues or sudden spikes
+    if (t.is_anomaly && t.issue_type === 'systemic') {
+      const message = `SYSTEMIC ISSUE: ${t.feature.replace(/_/g, ' ')} complaints reached ${Math.round(t.current_negative_pct * 100)}% (up from ${Math.round(t.previous_negative_pct * 100)}%). Affects ${t.unique_users_affected} reviewers in this window.`;
+      
+      await db.insert(alerts).values({
+        id: crypto.randomUUID(),
+        productId,
+        feature: t.feature,
+        severity: t.z_score > 4 ? 'critical' : 'high',
+        message,
+        currentPct: t.current_negative_pct * 100,
+        previousPct: t.previous_negative_pct * 100,
+        delta: t.delta_negative * 100,
+        createdAt: now,
+      });
+    } else if (t.is_anomaly && t.issue_type === 'praise_spike') {
+      const message = `PRAISE SPIKE: ${t.feature.replace(/_/g, ' ')} positive sentiment rose to ${Math.round(t.current_positive_pct * 100)}%. Positive trend detected!`;
+      
+      await db.insert(alerts).values({
+        id: crypto.randomUUID(),
+        productId,
+        feature: t.feature,
+        severity: 'low', // Praise is low priority but good to surface
+        message,
+        currentPct: t.current_positive_pct * 100,
+        previousPct: t.previous_positive_pct * 100,
+        delta: t.delta_positive * 100,
+        createdAt: now,
+      });
+    }
   }
 }
