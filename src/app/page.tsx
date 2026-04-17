@@ -105,7 +105,7 @@ export default function Dashboard() {
     generateReport("System Dashboard", reportData);
   };
 
-  if (!mounted) return <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-white flex items-center justify-center">Loading Engine...</div>;
+  if (!mounted) return <div className="min-h-screen bg-background text-foreground flex items-center justify-center">Loading Engine...</div>;
 
   return (
     <div className="flex-1 p-8 font-sans overflow-x-hidden">
@@ -152,11 +152,11 @@ export default function Dashboard() {
         <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
           {/* Feature Sentiment Chart (60%) */}
-          <Card className="lg:col-span-8 bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-xl overflow-hidden group">
+          <Card className="lg:col-span-8 bg-card border-border shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-xl overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
             <CardHeader className="relative z-10">
-              <CardTitle className="text-xl font-semibold text-slate-800 dark:text-white">Sentiment by Feature</CardTitle>
-              <CardDescription className="text-slate-500 dark:text-slate-400">Extracted natively from database</CardDescription>
+              <CardTitle className="text-xl font-semibold text-foreground">Sentiment by Feature</CardTitle>
+              <CardDescription className="text-muted-foreground">Extracted natively from database</CardDescription>
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="h-[320px] w-full">
@@ -180,9 +180,9 @@ export default function Dashboard() {
           </Card>
 
           {/* Alert Feed (40%) */}
-          <Card className="lg:col-span-4 bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-xl overflow-hidden">
+          <Card className="lg:col-span-4 bg-card border-border shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-xl overflow-hidden">
             <CardHeader>
-              <CardTitle className="text-xl font-semibold text-slate-800 dark:text-white flex items-center justify-between">
+              <CardTitle className="text-xl font-semibold text-foreground flex items-center justify-between">
                 <span>Systemic Alerts</span>
                 <Badge variant="destructive" className="bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 font-mono tracking-wider ml-2 border border-rose-500/30 animate-pulse">{activeAlertsList.length} NEW</Badge>
               </CardTitle>
@@ -208,13 +208,13 @@ export default function Dashboard() {
 
         {/* Full width trend line chart */}
         <motion.div variants={itemVariants}>
-          <Card className="bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 backdrop-blur-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-xl group overflow-hidden relative">
+          <Card className="bg-card border-border backdrop-blur-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-xl group overflow-hidden relative">
             <div className="absolute inset-0 bg-gradient-to-t from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
             <CardHeader className="relative z-10">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-xl font-semibold text-slate-800 dark:text-white">Trend Volatility (Z-Score Timeline)</CardTitle>
-                  <CardDescription className="text-slate-500 dark:text-slate-400">Rolling window comparison of battery_life negative sentiment</CardDescription>
+                  <CardTitle className="text-xl font-semibold text-foreground">Trend Volatility (Z-Score Timeline)</CardTitle>
+                  <CardDescription className="text-muted-foreground">Rolling window comparison of battery_life negative sentiment</CardDescription>
                 </div>
                 <Badge variant="outline" className="text-purple-400 border-purple-500/30 bg-purple-500/10 px-3 py-1 font-mono text-xs shadow-[0_0_15px_-3px_rgba(168,85,247,0.3)]">LIVE DB</Badge>
               </div>
@@ -254,15 +254,15 @@ export default function Dashboard() {
 
 function MetricCard({ title, value, sub, icon, highlight = false }: any) {
   return (
-    <Card className={`border-slate-200 dark:border-white/10 transition-all duration-300 hover:-translate-y-1 ${highlight ? 'bg-gradient-to-br from-rose-50 to-orange-50 dark:from-rose-500/10 dark:to-orange-500/5 shadow-[0_8px_30px_rgb(244,63,94,0.1)] dark:shadow-[0_0_30px_-5px_rgba(244,63,94,0.3)] border-rose-200 dark:border-rose-500/20' : 'bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-md'}`}>
+    <Card className={`border-border transition-all duration-300 hover:-translate-y-1 ${highlight ? 'bg-gradient-to-br from-rose-50 to-orange-50 dark:from-rose-500/10 dark:to-orange-500/5 shadow-[0_8px_30px_rgb(244,63,94,0.1)] dark:shadow-[0_0_30px_-5px_rgba(244,63,94,0.3)]' : 'bg-card shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-md'}`}>
       <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative overflow-hidden">
-        <CardTitle className="text-sm font-medium text-slate-500 dark:text-slate-400 z-10">{title}</CardTitle>
-        <div className="z-10 bg-slate-100 dark:bg-white/5 p-2 rounded-lg border border-slate-200 dark:border-white/5">{icon}</div>
+        <CardTitle className="text-sm font-medium text-muted-foreground z-10">{title}</CardTitle>
+        <div className="z-10 bg-slate-100 dark:bg-white/5 p-2 rounded-lg border border-border">{icon}</div>
         {highlight && <div className="absolute -top-10 -right-10 w-20 h-20 bg-rose-500/10 dark:bg-rose-500/20 blur-2xl rounded-full" />}
       </CardHeader>
       <CardContent className="relative z-10">
-        <div className="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight drop-shadow-sm">{value}</div>
-        <p className={`text-xs mt-1 font-medium ${highlight ? 'text-rose-500 dark:text-rose-400' : 'text-slate-400 dark:text-slate-500'}`}>{sub}</p>
+        <div className="text-3xl font-extrabold text-foreground tracking-tight drop-shadow-sm">{value}</div>
+        <p className={`text-xs mt-1 font-medium ${highlight ? 'text-rose-500 dark:text-rose-400' : 'text-muted-foreground'}`}>{sub}</p>
       </CardContent>
     </Card>
   );

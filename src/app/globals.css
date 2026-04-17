@@ -128,3 +128,28 @@
     @apply font-sans;
   }
 }
+
+/* Hard Turbopack Bypass for Theme Toggling */
+html, html.light {
+  background-color: #f8fafc !important; /* slate-50 */
+}
+html.dark {
+  background-color: #0A0A0A !important;
+}
+
+html.light body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important; /* slate-900 */
+}
+html.dark body {
+  background-color: #0A0A0A !important;
+  color: #e2e8f0 !important; /* slate-200 */
+}
+
+/* Force specific component overrides */
+html.light .theme-dark-only {
+  display: none !important;
+}
+html.dark .theme-light-only {
+  display: none !important;
+}
