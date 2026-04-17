@@ -13,7 +13,7 @@ export interface ReportData {
   alerts: any[];
 }
 
-export function generateReport(product: string, data: ReportData): Blob {
+export function generateReport(product: string, data: ReportData): void {
   const doc = new jsPDF();
   
   doc.setFontSize(18);
@@ -42,5 +42,5 @@ export function generateReport(product: string, data: ReportData): Blob {
     ])
   });
   
-  return doc.output('blob');
+  doc.save(`${product.replace(/\s+/g, '_')}_Report.pdf`);
 }
