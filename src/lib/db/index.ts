@@ -3,14 +3,19 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
 import path from 'path';
 
-// Use absolute path so it works regardless of Next.js CWD quirks
+// Singleton pattern for the database connection to prevent multiple handles in Dev
+const globalForDb = global as unknown as { sqlite: Database.Database, db: any };
+
 const dbPath = path.join(process.cwd(), 'sqlite.db');
-const sqlite = new Database(dbPath);
+
+export const sqlite = globalForDb.sqlite || new Database(dbPath);
+if (process.env.NODE_ENV !== 'production') globalForDb.sqlite = sqlite;
 
 // Enable WAL mode for better concurrent read performance
 sqlite.pragma('journal_mode = WAL');
 
-export const db = drizzle(sqlite, { schema });
+export const db = globalForDb.db || drizzle(sqlite, { schema });
+if (process.env.NODE_ENV !== 'production') globalForDb.db = db;
 
 // Ensure all tables exist (idempotent schema bootstrap)
 sqlite.exec(`
@@ -28,7 +33,16 @@ sqlite.exec(`
     overall_sentiment TEXT,
     confidence REAL,
     is_sarcastic INTEGER DEFAULT 0,
-    is_ambiguous INTEGER DEFAULT 0
+    is_ambiguous INTEGER DEFAULT 0,
+    cohort TEXT,
+    days_since_launch INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    launch_date TEXT NOT NULL,
+    category TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS feature_sentiments (
@@ -38,6 +52,15 @@ sqlite.exec(`
     sentiment TEXT NOT NULL,
     confidence REAL NOT NULL,
     quote TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS feature_forecasts (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES products(id),
+    feature TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    last_updated TEXT NOT NULL,
+    UNIQUE(product_id, feature)
   );
 
   CREATE TABLE IF NOT EXISTS flagged_reviews (

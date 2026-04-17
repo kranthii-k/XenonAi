@@ -3,9 +3,9 @@ import { reviews } from "@/lib/db/schema";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     if (!id) return NextResponse.json({ error: "No review ID provided" }, { status: 400 });
 
     const body = await req.json();

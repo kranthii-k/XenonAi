@@ -32,7 +32,7 @@ async function run() {
       batch_id: `batch-${i}`,
       rawText: r.text,
       text: r.text,
-      created_at: new Date(Date.now() - (5 - i) * 3600000).toISOString() // 1 hour intervals
+      created_at: new Date(Date.now() - (180 - (i * 30)) * 24 * 3600000).toISOString() // Spread across 6 months
     }));
 
     console.log(`Processing batch ${i+1}/5 (${batchReviews.length} reviews)...`);

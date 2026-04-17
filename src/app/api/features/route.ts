@@ -73,6 +73,7 @@ export async function GET(req: Request) {
       global_sentiment_score: globalSentimentScore
     });
   } catch (e) {
+    console.error("features error", e);
     return Response.json({ error: String(e) }, { status: 500 });
   }
 }

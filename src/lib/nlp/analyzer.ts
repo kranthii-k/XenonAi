@@ -1,8 +1,10 @@
 import { db } from '../db';
-import { reviews, featureSentiments, ingestionJobs, trends, alerts } from '../db/schema';
+import { reviews, featureSentiments, ingestionJobs, trends, alerts, products } from '../db/schema';
 import { buildExtractionPrompt } from '../prompts/extract';
 import { detectLanguage, buildLanguageInstruction } from './translator';
 import { computeRollingTrends } from './trends';
+import { getCohortAndDays } from '../utils/cohorts';
+import { Forecaster } from './forecaster';
 import * as crypto from 'crypto';
 import { eq, desc } from 'drizzle-orm';
 
@@ -82,6 +84,14 @@ export async function analyzeBatch(
 
   for (const review of inputReviews) {
     try {
+      // 0. Calculate cohort based on product launch date
+      // Fallback to "today" if product not found (will be fixed during backfill)
+      const product = await db.query.products.findFirst({
+        where: eq(products.id, review.product_id)
+      });
+      const launchDate = product?.launchDate ?? new Date().toISOString();
+      const { cohort, daysSinceLaunch } = getCohortAndDays(review.created_at, launchDate);
+
       const result = await analyzeReview(review.text, review.rawText);
 
       await db
@@ -101,6 +111,8 @@ export async function analyzeBatch(
           confidence: result.overall_confidence,
           isSarcastic: result.is_sarcastic,
           isAmbiguous: result.is_ambiguous,
+          cohort: cohort,
+          daysSinceLaunch: daysSinceLaunch,
         })
         .onConflictDoNothing();
 
@@ -153,6 +165,11 @@ export async function analyzeBatch(
   if (productId) {
     await updateProductTrends(productId).catch(err => 
       console.error('[analyzer] Trend update failed:', err)
+    );
+    
+    // Trigger ARIMA forecasting
+    await Forecaster.updateProductForecasts(productId).catch(err =>
+      console.error('[analyzer] Forecasting failed:', err)
     );
   }
 }

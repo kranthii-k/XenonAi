@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, unique } from 'drizzle-orm/sqlite-core';
 
 export const reviews = sqliteTable('reviews', {
   id: text('id').primaryKey(),
@@ -15,6 +15,15 @@ export const reviews = sqliteTable('reviews', {
   confidence: real('confidence'),
   isSarcastic: integer('is_sarcastic', { mode: 'boolean' }).default(false),
   isAmbiguous: integer('is_ambiguous', { mode: 'boolean' }).default(false),
+  cohort: text('cohort'),                        // m1, m3, m6, m9, m12, m18, m24
+  daysSinceLaunch: integer('days_since_launch'), // calculated offset for time-series anchor
+});
+
+export const products = sqliteTable('products', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  launchDate: text('launch_date').notNull(),      // anchor for cohort calculation
+  category: text('category').notNull(),
 });
 
 export const featureSentiments = sqliteTable('feature_sentiments', {
@@ -78,3 +87,13 @@ export const alerts = sqliteTable('alerts', {
   delta: real('delta').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
+export const featureForecasts = sqliteTable('feature_forecasts', {
+  id: text('id').primaryKey(),
+  productId: text('product_id').notNull().references(() => products.id),
+  feature: text('feature').notNull(),
+  dataJson: text('data_json').notNull(),          // Array of {cohort, actual, predicted}
+  lastUpdated: text('last_updated').notNull(),
+}, (t) => ({
+  unq: unique().on(t.productId, t.feature),
+}));
