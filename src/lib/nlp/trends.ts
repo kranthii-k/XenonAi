@@ -67,9 +67,9 @@ export function generateAlertMessage(r: WindowResult, productName: string): stri
   const label = r.feature.replace(/_/g, ' ');
   
   if (r.issue_type === 'systemic') {
-    return \`\${label} complaints in \${productName} have reached \${curr}% (up from \${prev}% in previous window). \` +
-           \`Affecting \${r.unique_users_affected} unique reviewers — likely a systemic batch issue. \` +
-           \`Recommended action: audit \${label} supply chain or vendor for this period.\`;
+    return `${label} complaints in ${productName} have reached ${curr}% (up from ${prev}% in previous window). ` +
+           `Affecting ${r.unique_users_affected} unique reviewers — likely a systemic batch issue. ` +
+           `Recommended action: audit ${label} supply chain or vendor for this period.`;
   }
-  return \`\${label} negative mentions rose to \${curr}% from \${prev}%. Monitor over next 50 reviews.\`;
+  return `${label} negative mentions rose to ${curr}% from ${prev}%. Monitor over next 50 reviews.`;
 }

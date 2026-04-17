@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       rawReviews = text.split('\n')
         .filter(Boolean)
         .map((line, i) => ({ 
-          id: \`manual-\${Date.now()}-\${i}\`, 
+          id: `manual-${Date.now()}-${i}`, 
           product_id: productId, 
           text: line.trim(), 
           created_at: new Date().toISOString() 
