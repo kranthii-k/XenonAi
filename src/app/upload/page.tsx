@@ -193,14 +193,15 @@ export default function UploadPage() {
   const isError = !!(response && response.error);
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-slate-200 p-6 md:p-10">
+    <div className="flex-1 p-8 overflow-x-hidden relative">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-40 bg-blue-500/10 blur-[100px] -z-10 rounded-full" />
       <div className="max-w-3xl mx-auto space-y-8">
 
         {/* Header */}
-        <header className="border-b border-white/10 pb-6">
-          <h1 className="text-3xl font-bold text-white">Ingestion Pipeline</h1>
-          <p className="text-slate-400 mt-1">
-            Upload CSV / JSON reviews, or paste text — deduplication, bot detection, and NLP extraction run automatically.
+        <header className="border-b border-white/10 pb-6 relative">
+          <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Data Ingestion Engine</h1>
+          <p className="text-slate-400 mt-1 font-medium">
+            Standardized deduplication, bot pattern extraction, and asynchronous NLP processing.
           </p>
         </header>
 

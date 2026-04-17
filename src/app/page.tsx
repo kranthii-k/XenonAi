@@ -105,7 +105,7 @@ export default function Dashboard() {
   if (!mounted) return <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center">Loading Engine...</div>;
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-slate-200 p-8 font-sans selection:bg-purple-500/30 overflow-x-hidden">
+    <div className="flex-1 p-8 font-sans overflow-x-hidden">
       <motion.div 
         className="max-w-[1600px] mx-auto space-y-8"
         variants={containerVariants}
