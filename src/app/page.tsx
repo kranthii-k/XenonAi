@@ -60,7 +60,9 @@ export default function Dashboard() {
       const tData = await tRes.json();
       const aData = await aRes.json();
       
-      if (fData && fData.length > 0) setFeatureData(fData);
+      if (fData && fData.features && fData.features.length > 0) {
+         setFeatureData(fData.features);
+      }
       
       if (tData && tData.length > 0) {
          const formattedTrends = tData.map((t: any) => ({

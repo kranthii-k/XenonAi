@@ -1,7 +1,13 @@
-export const buildExtractionPrompt = (text: string): string => `
+/**
+ * Build the structured extraction prompt for Claude.
+ *
+ * @param text - The review text (normalised, but not stripped of meaning)
+ * @param languagePrefix - Optional language instruction from translator.ts
+ */
+export const buildExtractionPrompt = (text: string, languagePrefix = ''): string => `
 You are a product review analyst. Analyze this customer review and return ONLY valid JSON.
 
-Review: "${text}"
+${languagePrefix}Review: "${text}"
 
 Return this exact structure:
 {
@@ -9,7 +15,8 @@ Return this exact structure:
   "overall_confidence": 0.0-1.0,
   "is_sarcastic": true | false,
   "is_ambiguous": true | false,
-  "language_detected": "en" | "hi" | "mixed",
+  "language_detected": "en" | "hi" | "mixed" | "ta" | "te" | "kn" | "ml" | "mr" | "bn" | "unknown",
+  "translated_text": "<English translation if non-English, else null>",
   "features": [
     {
       "feature": "battery_life" | "packaging" | "delivery_speed" | 
@@ -26,7 +33,10 @@ Return this exact structure:
 
 Rules:
 - Only extract features ACTUALLY mentioned. Do not invent features.
-- If sarcastic OR ambiguous: set is_sarcastic/is_ambiguous to true.
+- If sarcastic: the SENTIMENT should reflect true meaning, not surface words.
+  Example: "Oh great, broke in a week" → overall_sentiment = negative, is_sarcastic = true.
+- If ambiguous: set is_ambiguous = true, explain in ambiguity_reason.
 - Confidence = your certainty in that extraction (0 = guessing, 1 = certain).
-- Return ONLY the JSON object. No markdown, no explanation.
-`;
+- For translated_text: provide English translation ONLY for non-English reviews. Set null for English.
+- Return ONLY the JSON object. No markdown, no explanation, no code fences.
+`.trim();
