@@ -84,11 +84,24 @@ export async function analyzeBatch(
 
   for (const review of inputReviews) {
     try {
-      // 0. Calculate cohort based on product launch date
-      // Fallback to "today" if product not found (will be fixed during backfill)
-      const product = await db.query.products.findFirst({
+      // 0. Auto-Discovery: Initialize product if it doesn't exist
+      let product = await db.query.products.findFirst({
         where: eq(products.id, review.product_id)
       });
+      
+      if (!product) {
+        console.log(`[analyzer] Auto-discovering new product: ${review.product_id}`);
+        const newProduct = {
+          id: review.product_id,
+          name: review.product_id.charAt(0).toUpperCase() + review.product_id.slice(1),
+          launchDate: new Date().toISOString(),
+          category: 'other',
+          metadata: { auto_discovered: true }
+        };
+        await db.insert(products).values(newProduct).onConflictDoNothing();
+        product = newProduct as any;
+      }
+
       const launchDate = product?.launchDate ?? new Date().toISOString();
       const { cohort, daysSinceLaunch } = getCohortAndDays(review.created_at, launchDate);
 
@@ -167,9 +180,9 @@ export async function analyzeBatch(
       console.error('[analyzer] Trend update failed:', err)
     );
 
-    // Trigger ARIMA forecasting
+    // Trigger ARIMA forecasting (errors isolated)
     await Forecaster.updateProductForecasts(productId).catch(err =>
-      console.error('[analyzer] Forecasting failed:', err)
+      console.error('[analyzer] Forecasting failed (continuing trends):', err)
     );
   }
 }

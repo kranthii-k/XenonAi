@@ -8,7 +8,8 @@ import {
   UploadCloud, FileText, CheckCircle2, AlertTriangle,
   Loader2, XCircle, Wifi, WifiOff, ChevronDown, ChevronUp
 } from "lucide-react";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from 'next/navigation';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -31,7 +32,9 @@ interface IngestResponse {
   error?: string;
   hint?: string;
   found_columns?: string;
-  details?: unknown;
+  details?: string;
+  raw_stdout?: string;
+  raw_stderr?: string;
 }
 
 interface JobStatus {
@@ -44,7 +47,7 @@ interface JobStatus {
   error?: string | null;
 }
 
-type InputMode = 'file' | 'paste';
+type InputMode = 'file' | 'paste' | 'fetch';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
@@ -54,7 +57,10 @@ export default function UploadPage() {
   const [inputMode, setInputMode] = useState<InputMode>('file');
   const [productId, setProductId] = useState('');
   const [pasteText, setPasteText] = useState('');
+  const [isMagicMode, setIsMagicMode] = useState(false);
+  const [magicData, setMagicData] = useState<any>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [fetchUrl, setFetchUrl] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [response, setResponse] = useState<IngestResponse | null>(null);
@@ -62,6 +68,7 @@ export default function UploadPage() {
   const [liveFeedActive, setLiveFeedActive] = useState(false);
   const [liveFeedItems, setLiveFeedItems] = useState<string[]>([]);
   const [showFlagDetails, setShowFlagDetails] = useState(false);
+  const [botBlocked, setBotBlocked] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
@@ -93,6 +100,39 @@ export default function UploadPage() {
     };
   }, []);
 
+  // Magic Mode Detector
+  useEffect(() => {
+    const checkMagic = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('magic') === 'true') {
+        setIsMagicMode(true);
+        // Pre-select Fetch mode for context
+        setInputMode('fetch');
+      }
+    };
+    checkMagic();
+  }, []);
+
+  const handleMagicIngest = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const parsed = JSON.parse(text);
+      if (parsed.reviews) {
+        setPasteText(text);
+        setInputMode('paste');
+        setIsMagicMode(false);
+        // Auto-submit after a tiny delay so UI updates
+        setTimeout(() => {
+          document.getElementById('submit-ingest-btn')?.click();
+        }, 100);
+      }
+    } catch (err) {
+      console.error("Magic Ingest Failed:", err);
+      alert("Magic Ingest failed. Please ensure you copied the data correctly or try manual paste.");
+      setIsMagicMode(false);
+    }
+  };
+
   // ── File handling ──────────────────────────────────────────────────────────
 
   const handleFileSelect = (file: File) => {
@@ -122,12 +162,43 @@ export default function UploadPage() {
   const handleSubmit = async () => {
     if (inputMode === 'file' && !selectedFile) return;
     if (inputMode === 'paste' && !pasteText.trim()) return;
+    if (inputMode === 'fetch' && !fetchUrl.trim()) return;
 
     setIsSubmitting(true);
     setResponse(null);
     setJobStatus(null);
 
     try {
+      if (inputMode === 'fetch') {
+        setBotBlocked(false);
+        const res = await fetch('/api/ingest/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: fetchUrl.trim(), productId: productId.trim() }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          setResponse({ error: data.error });
+          if (data.is_blocked) setBotBlocked(true);
+        } else {
+          setResponse({
+            message: data.message,
+            total_received: Number(data.scraped_count),
+            queued_for_analysis: data.ingest_result?.queued_for_analysis ?? 0,
+            job_id: data.ingest_result?.job_id,
+            flagged: data.ingest_result?.flagged
+          });
+          
+          // Signal refresh immediately for the basic scraped count
+          window.dispatchEvent(new CustomEvent('xenon-refresh-stats', { detail: { productId } }));
+
+          if (data.ingest_result?.job_id) {
+            startPolling(data.ingest_result.job_id);
+          }
+        }
+        return;
+      }
+
       const formData = new FormData();
       if (productId.trim()) formData.append('product_id', productId.trim());
 
@@ -159,7 +230,10 @@ export default function UploadPage() {
 
   const toggleLiveFeed = () => {
     if (liveFeedActive) {
-      eventSourceRef.current?.close();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
       setLiveFeedActive(false);
     } else {
       setLiveFeedItems([]);
@@ -169,10 +243,21 @@ export default function UploadPage() {
 
       es.onmessage = (e) => {
         try {
+          if (e.data === '{}') return;
           const review = JSON.parse(e.data);
           setLiveFeedItems(prev => [review.text, ...prev].slice(0, 20));
+          
+          // Trigger reactive refresh for graphs
+          window.dispatchEvent(new CustomEvent('xenon-refresh-stats', { 
+            detail: { productId: review.product_id } 
+          }));
         } catch {/* ignore */}
       };
+
+      es.addEventListener('done', () => {
+        es.close();
+        setLiveFeedActive(false);
+      });
 
       es.onerror = () => {
         es.close();
@@ -187,13 +272,45 @@ export default function UploadPage() {
 
   const canSubmit =
     !isSubmitting &&
-    (inputMode === 'file' ? !!selectedFile : pasteText.trim().length > 0);
+    (inputMode === 'file' ? !!selectedFile : inputMode === 'paste' ? pasteText.trim().length > 0 : fetchUrl.trim().length > 0);
 
   const isSuccess = !!(response && !response.error && response.job_id);
   const isError = !!(response && response.error);
 
   return (
     <div className="flex-1 p-8 overflow-x-hidden relative">
+      {/* Magic Overlay */}
+      {isMagicMode && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <Card className="w-full max-w-md border-blue-500/50 bg-slate-900 shadow-2xl shadow-blue-500/20">
+            <CardHeader className="text-center">
+              <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/30">
+                <UploadCloud className="w-8 h-8 text-blue-400 animate-bounce" />
+              </div>
+              <CardTitle className="text-xl text-white">Inbound Data Detected</CardTitle>
+              <CardDescription>
+                Your browser has review data ready for ingestion. 
+                Click below to finalize the transfer.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button 
+                onClick={handleMagicIngest}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white h-12 text-base font-bold shadow-lg shadow-blue-600/20"
+              >
+                📥 Finalize Magic Ingestion
+              </Button>
+              <Button 
+                variant="ghost" 
+                onClick={() => setIsMagicMode(false)}
+                className="w-full text-slate-500 hover:text-slate-300"
+              >
+                Cancel and use manual mode
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-40 bg-blue-500/10 blur-[100px] -z-10 rounded-full" />
       <div className="max-w-3xl mx-auto space-y-8">
 
@@ -253,6 +370,17 @@ export default function UploadPage() {
             }`}
           >
             Paste Text
+          </button>
+          <button
+            id="mode-fetch-btn"
+            onClick={() => setInputMode('fetch')}
+            className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+              inputMode === 'fetch'
+                ? 'bg-blue-600 text-white shadow-inner shadow-blue-400/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Fetch from Link
           </button>
         </div>
 
@@ -337,6 +465,73 @@ export default function UploadPage() {
           </Card>
         )}
 
+        {/* Fetch Mode */}
+        {inputMode === 'fetch' && (
+          <Card className="bg-white/5 border-white/10 backdrop-blur-md relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-white flex items-center gap-2">
+                <Wifi className="w-4 h-4 text-blue-400" />
+                Fetch Live Reviews
+              </CardTitle>
+              <CardDescription className="text-slate-400">
+                Paste an Amazon.in or Flipkart.com product URL.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <input
+                  id="fetch-url-input"
+                  type="text"
+                  value={fetchUrl}
+                  onChange={e => setFetchUrl(e.target.value)}
+                  placeholder="https://www.amazon.in/dp/B0CHX2F5QT..."
+                  className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50"
+                />
+                <div className="bg-blue-500/5 rounded-lg p-3 text-xs text-blue-400/70 space-y-1">
+                  <p>✔ Supports star ratings and review text extraction.</p>
+                  <p>✔ Automatically ignores duplicates via standard pipeline.</p>
+                </div>
+
+                <div className={`pt-4 border-t border-white/5 mt-4 space-y-4 p-3 rounded-lg transition-all ${botBlocked ? 'bg-amber-500/10 border border-amber-500/30' : ''}`}>
+                  <div className="flex items-center justify-between">
+                    <h4 className={`text-xs font-semibold uppercase tracking-wider ${botBlocked ? 'text-amber-400' : 'text-slate-300'}`}>
+                      {botBlocked ? '⚠️ Permanent Fix: Xenon Sidecar' : 'Permanent Solution: Xenon Extension'}
+                    </h4>
+                    <span className="text-[9px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full uppercase font-bold tracking-tighter">Recommended</span>
+                  </div>
+                  
+                  <p className={`text-[11px] leading-relaxed ${botBlocked ? 'text-amber-200/70' : 'text-slate-500'}`}>
+                    Avoid manual copying forever. The extension now uses <b>Direct Push</b> to send reviews straight to your dashboard with one click, or use the <b>Magic Bookmarklet</b> which auto-returns you here.
+                  </p>
+                  
+                  <div className="flex gap-2">
+                    <Button
+                        onClick={() => {
+                            const snippet = `(function(){console.log("[Xenon] Starting extraction...");let reviews=[];const isAmazon=window.location.hostname.includes("amazon");const isFlipkart=window.location.hostname.includes("flipkart");if(isAmazon){document.querySelectorAll("div[data-hook='review']").forEach(container=>{const text=container.querySelector("span[data-hook='review-body']")?.innerText.trim();const ratingText=container.querySelector("i[data-hook='review-star-rating'] span")?.innerText;const rating=ratingText?parseInt(ratingText[0]):5;if(text)reviews.push({text,rating,created_at:new Date().toISOString()})})}else if(isFlipkart){document.querySelectorAll("div._27M-N1, div._1AtVbE").forEach(container=>{const textElem=container.querySelector("div.t-ZTKy");if(!textElem)return;const text=textElem.innerText.replace("READ MORE","").trim();const rating=parseInt(container.querySelector("div._3LWZlK")?.innerText||"5");if(text)reviews.push({text,rating,created_at:new Date().toISOString()})})}if(reviews.length>0){const payload=JSON.stringify({reviews},null,2);const el=document.createElement('textarea');el.value=payload;document.body.appendChild(el);el.select();document.execCommand('copy');document.body.removeChild(el);if(confirm(\`🚀 [Xenon] Successfully extracted \${reviews.length} reviews!\\n\\nData is on your clipboard.\\n\\nWould you like to auto-return to the Xenon Dashboard to finalize ingestion?\`)){window.location.href="http://localhost:3000/upload?magic=true"}}else{alert("❌ [Xenon] No reviews found. Ensure you are on the 'All Reviews' page.")}})();`;
+                            navigator.clipboard.writeText(snippet);
+                            alert("Magic Bookmarklet copied! Paste it into your browser Console while on Amazon/Flipkart. It will auto-redirect you back here.");
+                        }}
+                        variant="outline"
+                        className="flex-1 text-[10px] h-8 border-white/5 text-slate-400 hover:bg-white/5"
+                    >
+                        Copy Magic Bookmarklet
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            alert("The extension files are located in: /home/mallhar/Desktop/hack_malenadu/sidecar\n\n1. Go to chrome://extensions\n2. Enable 'Developer mode'\n3. Click 'Load unpacked'\n4. Select the /sidecar folder");
+                        }}
+                        className="flex-1 text-[10px] h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                        View Setup Guide
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Submit */}
         <Button
           id="submit-ingest-btn"
@@ -360,6 +555,12 @@ export default function UploadPage() {
                 <span className="font-semibold">Ingestion Failed</span>
               </div>
               <p className="text-slate-300 text-sm">{response?.error}</p>
+              {response?.details && (
+                <div className="mt-2 p-2 bg-black/40 rounded text-[10px] font-mono text-rose-300 overflow-x-auto whitespace-pre">
+                  {response.details}
+                  {response.raw_stderr}
+                </div>
+              )}
               {response?.hint && (
                 <p className="text-slate-400 text-xs">💡 {response.hint}</p>
               )}
