@@ -16,15 +16,15 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 border-r border-white/5 bg-[#050505] flex flex-col h-screen sticky top-0">
-      <div className="p-6 border-b border-white/5 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 blur-3xl -z-10 rounded-full" />
+    <aside className="w-64 border-r border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#050505] flex flex-col h-screen sticky top-0 transition-colors duration-300">
+      <div className="p-6 border-b border-slate-200 dark:border-white/5 relative overflow-hidden transition-colors duration-300">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 dark:bg-purple-500/10 blur-3xl -z-10 rounded-full" />
         <Link href="/">
           <div className="flex items-center space-x-2 cursor-pointer">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <span className="text-white font-bold text-lg">X</span>
             </div>
-            <span className="font-extrabold text-xl tracking-tight text-white/90">Xenon AI</span>
+            <span className="font-extrabold text-xl tracking-tight text-slate-800 dark:text-white/90">Xenon AI</span>
           </div>
         </Link>
       </div>
@@ -36,17 +36,17 @@ export function Sidebar() {
           const isActive = pathname === item.href;
           return (
             <Link key={item.href} href={item.href}>
-              <div className={`relative flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors group cursor-pointer ${isActive ? 'text-white' : 'text-slate-400 hover:text-white'}`}>
+              <div className={`relative flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors group cursor-pointer ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}>
                 {isActive && (
                   <motion.div 
                     layoutId="sidebar-active"
-                    className="absolute inset-0 bg-white/[0.06] border border-white/10 rounded-lg -z-10"
+                    className="absolute inset-0 bg-slate-200/50 dark:bg-white/[0.06] border border-slate-300/50 dark:border-white/10 rounded-lg -z-10"
                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                   />
                 )}
-                {isActive && <div className="absolute left-0 top-[20%] bottom-[20%] w-0.5 bg-purple-500 rounded-r-md shadow-[0_0_10px_0_rgba(168,85,247,0.5)]" />}
+                {isActive && <div className="absolute left-0 top-[20%] bottom-[20%] w-0.5 bg-emerald-500 dark:bg-purple-500 rounded-r-md shadow-[0_0_10px_0_rgba(16,185,129,0.5)] dark:shadow-[0_0_10px_0_rgba(168,85,247,0.5)]" />}
                 
-                <span className={`transition-colors ${isActive ? 'text-purple-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                <span className={`transition-colors ${isActive ? 'text-emerald-500 dark:text-purple-400' : 'text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`}>
                    {item.icon}
                 </span>
                 <span className="font-medium text-sm">{item.label}</span>
@@ -56,8 +56,8 @@ export function Sidebar() {
         })}
       </div>
 
-      <div className="p-4 border-t border-white/5">
-        <div className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
+      <div className="p-4 border-t border-slate-200 dark:border-white/5 transition-colors duration-300">
+        <div className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors cursor-pointer">
           <Settings size={20} />
           <span className="font-medium text-sm">Settings</span>
         </div>
