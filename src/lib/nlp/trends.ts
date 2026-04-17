@@ -4,13 +4,24 @@ export interface WindowResult {
   feature: string;
   current_negative_pct: number;
   previous_negative_pct: number;
-  delta: number;
+  current_positive_pct: number;
+  previous_positive_pct: number;
+  delta_negative: number;
+  delta_positive: number;
   z_score: number;
   is_anomaly: boolean;
-  issue_type: 'isolated' | 'emerging' | 'systemic';
+  issue_type: 'isolated' | 'emerging' | 'systemic' | 'praise_spike';
   unique_users_affected: number;
 }
 
+/**
+ * Computes statistical trends across a rolling window of reviews.
+ * 
+ * Logic:
+ * 1. Differentiates between negative and positive shifts.
+ * 2. Uses Z-score to determine statistical significance (anomaly).
+ * 3. Flags 'systemic' issues if multiple users are affected and Z-score > 2.0.
+ */
 export function computeRollingTrends(
   reviews: AnalyzedReview[],
   windowSize = 50
@@ -26,38 +37,62 @@ export function computeRollingTrends(
   
   for (const feature of allFeatures) {
     const currentNeg = current.filter(r =>
-      r.features.some(f => f.feature === feature && f.sentiment === 'negative')
+      r.features?.some(f => f.feature === feature && f.sentiment === 'negative')
     ).length / Math.max(current.length, 1);
     
     const previousNeg = previous.length > 0
       ? previous.filter(r =>
-          r.features.some(f => f.feature === feature && f.sentiment === 'negative')
+          r.features?.some(f => f.feature === feature && f.sentiment === 'negative')
+        ).length / previous.length
+      : 0;
+
+    const currentPos = current.filter(r =>
+      r.features?.some(f => f.feature === feature && f.sentiment === 'positive')
+    ).length / Math.max(current.length, 1);
+    
+    const previousPos = previous.length > 0
+      ? previous.filter(r =>
+          r.features?.some(f => f.feature === feature && f.sentiment === 'positive')
         ).length / previous.length
       : 0;
     
-    const delta = currentNeg - previousNeg;
+    const deltaNeg = currentNeg - previousNeg;
+    const deltaPos = currentPos - previousPos;
     
-    // Z-score: how many standard deviations above historical mean?
-    const historicalMean = previousNeg;
-    const historicalStd = Math.sqrt(previousNeg * (1 - previousNeg) / windowSize);
-    const z_score = historicalStd > 0 ? delta / historicalStd : 0;
+    // Z-score for negative trend: (delta) / stderr
+    // stderr = sqrt( p*(1-p) / N )
+    const p = previousNeg;
+    const stderr = Math.sqrt((p * (1 - p)) / windowSize) || 0.01; // Avoid div by zero
+    const z_score = deltaNeg / stderr;
     
-    const matchingReviews = current.filter(r =>
-      r.features.some(f => f.feature === feature && f.sentiment === 'negative')
+    const negativeReviews = current.filter(r =>
+      r.features?.some(f => f.feature === feature && f.sentiment === 'negative')
     );
-    const uniqueUsers = new Set(matchingReviews.map(r => r.id)).size;
+    const uniqueUsers = new Set(negativeReviews.map(r => r.id)).size;
     
-    const issue_type =
-      uniqueUsers <= 2 ? 'isolated' :
-      z_score > 2.0 ? 'systemic' : 'emerging';
+    let issue_type: WindowResult['issue_type'] = 'isolated';
+    if (uniqueUsers > 2) {
+      if (z_score > 2.0) issue_type = 'systemic';
+      else if (deltaNeg > 0.1) issue_type = 'emerging';
+      else if (deltaPos > 0.15) issue_type = 'praise_spike';
+    }
     
     results.push({
-      feature, current_negative_pct: currentNeg, previous_negative_pct: previousNeg,
-      delta, z_score, is_anomaly: z_score > 2.0, issue_type, unique_users_affected: uniqueUsers
+      feature,
+      current_negative_pct: currentNeg,
+      previous_negative_pct: previousNeg,
+      current_positive_pct: currentPos,
+      previous_positive_pct: previousPos,
+      delta_negative: deltaNeg,
+      delta_positive: deltaPos,
+      z_score,
+      is_anomaly: z_score > 2.0 || deltaNeg > 0.25,
+      issue_type,
+      unique_users_affected: uniqueUsers
     });
   }
   
-  return results.sort((a, b) => b.delta - a.delta);
+  return results.sort((a, b) => b.delta_negative - a.delta_negative);
 }
 
 // Generate human-readable alert messages

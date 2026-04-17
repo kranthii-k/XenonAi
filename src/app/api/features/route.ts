@@ -62,9 +62,21 @@ export async function GET(req: Request) {
       }))
       .sort((a, b) => b.total_mentions - a.total_mentions);
 
-    return Response.json({ features, total_records: allFeatures.length });
+    // Calculate global sentiment summary for metric cards
+    const globalPositive = [...aggregated.values()].reduce((sum, c) => sum + c.positive, 0);
+    const globalTotal = [...aggregated.values()].reduce((sum, c) => sum + countsTotal(c), 0);
+    const globalSentimentScore = globalTotal > 0 ? Math.round((globalPositive / globalTotal) * 100) : 0;
+
+    return Response.json({ 
+      features, 
+      total_records: allFeatures.length,
+      global_sentiment_score: globalSentimentScore
+    });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 });
-
   }
+}
+
+function countsTotal(c: { positive: number; negative: number; neutral: number }) {
+  return c.positive + c.negative + c.neutral;
 }
