@@ -9,7 +9,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { generateReport } from "@/lib/utils/export";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useTheme } from "next-themes";
+
 
 // Initial Mock Data Fallback
 const fallbackFeatureData = [
@@ -51,7 +51,7 @@ export default function Dashboard() {
   const [activeAlertsList, setActiveAlertsList] = useState<any[]>([]);
   const [reviewsCount, setReviewsCount] = useState(0);
   const [avgSentiment, setAvgSentiment] = useState(75);
-  const { theme } = useTheme();
+  const [isDark, setIsDark] = useState(true);
 
   const fetchDashboardData = async () => {
     try {
@@ -87,9 +87,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     setMounted(true);
+    setIsDark(document.documentElement.classList.contains('dark'));
+    // Listen for class changes on html element to track theme
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     fetchDashboardData();
     const intervalId = setInterval(fetchDashboardData, 5000);
-    return () => clearInterval(intervalId);
+    return () => { clearInterval(intervalId); observer.disconnect(); };
   }, []);
 
   const handleExport = () => {
@@ -162,12 +168,12 @@ export default function Dashboard() {
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
                   <BarChart data={featureData} layout="vertical" margin={{ left: 100, right: 30 }}>
-                    <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke={theme === 'dark' ? '#555' : '#ccc'} />
-                    <YAxis type="category" dataKey="feature" width={100} stroke={theme === 'dark' ? '#aaa' : '#666'} tickLine={false} axisLine={false} />
+                    <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke={isDark ? '#555' : '#ccc'} />
+                    <YAxis type="category" dataKey="feature" width={100} stroke={isDark ? '#aaa' : '#666'} tickLine={false} axisLine={false} />
                     <Tooltip 
-                      cursor={{ fill: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}
+                      cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}
                       formatter={(v: number) => `${v}%`} 
-                      contentStyle={{ backgroundColor: theme === 'dark' ? '#1A1A1A' : '#ffffff', borderColor: theme === 'dark' ? '#333' : '#eee', color: theme === 'dark' ? '#fff' : '#111', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
+                      contentStyle={{ backgroundColor: isDark ? '#1A1A1A' : '#ffffff', borderColor: isDark ? '#333' : '#eee', color: isDark ? '#fff' : '#111', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
                     />
                     <Legend wrapperStyle={{ paddingTop: '20px' }} />
                     <Bar dataKey="positive" stackId="a" fill="#10B981" name="Positive" radius={[0, 0, 0, 0]} animationDuration={1000} />
@@ -223,12 +229,12 @@ export default function Dashboard() {
               <div className="h-[280px] w-full">
                 <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
                   <LineChart data={trendData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-                    <XAxis dataKey="batch" stroke={theme === 'dark' ? '#555' : '#ccc'} tickLine={false} axisLine={false} />
-                    <YAxis stroke={theme === 'dark' ? '#555' : '#ccc'} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                    <XAxis dataKey="batch" stroke={isDark ? '#555' : '#ccc'} tickLine={false} axisLine={false} />
+                    <YAxis stroke={isDark ? '#555' : '#ccc'} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: theme === 'dark' ? '#1A1A1A' : '#ffffff', borderColor: theme === 'dark' ? '#333' : '#eee', color: theme === 'dark' ? '#fff' : '#111', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
+                      contentStyle={{ backgroundColor: isDark ? '#1A1A1A' : '#ffffff', borderColor: isDark ? '#333' : '#eee', color: isDark ? '#fff' : '#111', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
                       formatter={(val: number) => [`${val}%`, "Negative Pct"]} 
-                      labelStyle={{ color: theme === 'dark' ? '#aaa' : '#666', marginBottom: '8px', display: 'block' }}
+                      labelStyle={{ color: isDark ? '#aaa' : '#666', marginBottom: '8px', display: 'block' }}
                     />
                     <Line 
                       type="monotone" 
