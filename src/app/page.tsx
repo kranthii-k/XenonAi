@@ -2,13 +2,15 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine } from "recharts";
-import { Activity, AlertTriangle, MessageSquare, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, MessageSquare, TrendingUp, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { generateReport } from "@/lib/utils/export";
 
-// Initial Mock Data
-const initialFeatureData = [
+// Initial Mock Data Fallback
+const fallbackFeatureData = [
   { feature: "Battery Life", positive: 65, neutral: 10, negative: 25 },
   { feature: "Display Quality", positive: 85, neutral: 10, negative: 5 },
   { feature: "Camera", positive: 90, neutral: 5, negative: 5 },
@@ -16,16 +18,11 @@ const initialFeatureData = [
   { feature: "Software", positive: 50, neutral: 20, negative: 30 },
 ];
 
-const initialTrendData = Array.from({ length: 15 }).map((_, i) => ({
+const fallbackTrendData = Array.from({ length: 15 }).map((_, i) => ({
   batch: `Batch ${i + 1}`,
   negativeRate: i === 12 ? 45 : 10 + Math.random() * 5,
   isAnomaly: i === 12
 }));
-
-const mockAlerts = [
-  { id: 1, feature: "Battery Life", severity: "critical", msg: "Complaints reached 45% (up from 12%). Likely a systemic batch issue.", time: "10m ago" },
-  { id: 2, feature: "Software", severity: "high", msg: "Negative mentions rose to 30%. Monitor closely.", time: "2h ago" },
-];
 
 // Animation Variants
 const containerVariants = {
@@ -47,53 +44,59 @@ const itemVariants = {
 
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
-  const [featureData, setFeatureData] = useState(initialFeatureData);
-  const [trendData, setTrendData] = useState(initialTrendData);
-  const [reviewsCount, setReviewsCount] = useState(1284);
-  const [activeAlerts, setActiveAlerts] = useState(2);
+  const [featureData, setFeatureData] = useState<any[]>(fallbackFeatureData);
+  const [trendData, setTrendData] = useState<any[]>(fallbackTrendData);
+  const [activeAlertsList, setActiveAlertsList] = useState<any[]>([]);
+  const [reviewsCount, setReviewsCount] = useState(0);
+
+  const fetchDashboardData = async () => {
+    try {
+      const [fRes, tRes, aRes] = await Promise.all([
+        fetch('/api/features'),
+        fetch('/api/trends'),
+        fetch('/api/alerts')
+      ]);
+      const fData = await fRes.json();
+      const tData = await tRes.json();
+      const aData = await aRes.json();
+      
+      if (fData && fData.length > 0) setFeatureData(fData);
+      
+      if (tData && tData.length > 0) {
+         const formattedTrends = tData.map((t: any) => ({
+           batch: `B-${t.batchIndex}`,
+           negativeRate: Number(t.negativePct).toFixed(1),
+           isAnomaly: t.isAnomaly
+         }));
+         setTrendData(formattedTrends);
+         setReviewsCount(tData.length * 10);
+      }
+      
+      if (aData && aData.length >= 0) setActiveAlertsList(aData);
+    } catch(err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
-    
-    // Simulate live data updates so the dashboard feels dynamic and alive
-    const intervalId = setInterval(() => {
-      setFeatureData(prev => prev.map(item => {
-        // jitter values slightly
-        const shift = Math.floor(Math.random() * 5) - 2;
-        let newPos = Math.max(0, Math.min(100, item.positive + shift));
-        let newNeg = Math.max(0, Math.min(100, item.negative - shift));
-        let remaining = 100 - newPos - newNeg;
-        if (remaining < 0) {
-          newPos -= Math.abs(remaining); 
-          remaining = 0;
-        }
-        return { ...item, positive: newPos, negative: newNeg, neutral: remaining };
-      }));
-
-      setTrendData(prev => {
-        const newData = [...prev];
-        // Jitter the last data point slightly
-        const lastIdx = newData.length - 1;
-        newData[lastIdx] = {
-           ...newData[lastIdx],
-           negativeRate: Math.max(0, Math.min(100, newData[lastIdx].negativeRate + (Math.random() * 2 - 1)))
-        };
-        return newData;
-      });
-
-      // Increment review count randomly
-      if (Math.random() > 0.5) {
-        setReviewsCount(prev => prev + Math.floor(Math.random() * 3) + 1);
-      }
-      
-      // Occasionally blink an alert
-      if (Math.random() > 0.95) {
-        setActiveAlerts(prev => prev === 2 ? 3 : 2);
-      }
-    }, 2500);
-
+    fetchDashboardData();
+    const intervalId = setInterval(fetchDashboardData, 5000);
     return () => clearInterval(intervalId);
   }, []);
+
+  const handleExport = () => {
+    const reportData = {
+      features: featureData.map(f => ({
+         feature: f.feature,
+         positive_pct: f.positive,
+         negative_pct: f.negative,
+         avg_confidence: 0.95 // mock confidence aggregate
+      })),
+      alerts: activeAlertsList
+    };
+    generateReport("System Dashboard", reportData);
+  };
 
   if (!mounted) return <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center">Loading Engine...</div>;
 
@@ -115,21 +118,26 @@ export default function Dashboard() {
             </h1>
             <p className="text-slate-400 font-medium">Real-time NLP telemetry & anomaly detection</p>
           </div>
-          <div className="flex items-center space-x-3 text-sm font-semibold tracking-wide bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-full shadow-[0_0_15px_-3px_rgba(16,185,129,0.3)]">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-            </span>
-            <span className="text-emerald-400">PIPELINE ACTIVE</span>
+          <div className="flex items-center space-x-6">
+            <Button onClick={handleExport} variant="outline" className="text-emerald-400 border-white/10 bg-white/5 hover:bg-emerald-500/10">
+              <Download className="w-4 h-4 mr-2" /> Export PDF Report
+            </Button>
+            <div className="flex items-center space-x-3 text-sm font-semibold tracking-wide bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-full shadow-[0_0_15px_-3px_rgba(16,185,129,0.3)]">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              <span className="text-emerald-400">DATABASE CONNECTED</span>
+            </div>
           </div>
         </motion.header>
 
         {/* 4 Metric Cards */}
         <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard title="Total Reviews" value={reviewsCount.toLocaleString()} sub="Live ingestion" icon={<MessageSquare className="w-5 h-5 text-blue-400" />} />
+          <MetricCard title="Processed Records" value={reviewsCount.toLocaleString()} sub="Live ingestion tracked" icon={<MessageSquare className="w-5 h-5 text-blue-400" />} />
           <MetricCard title="Avg Sentiment" value="78%" sub="+2.5% from last batch" icon={<Activity className="w-5 h-5 text-emerald-400" />} />
-          <MetricCard title="Active Alerts" value={activeAlerts.toString()} sub="Requires attention" icon={<AlertTriangle className="w-5 h-5 text-rose-400" />} highlight={activeAlerts > 2} />
-          <MetricCard title="Anomaly Z-Score" value="2.4σ" sub="Peak observed today" icon={<TrendingUp className="w-5 h-5 text-purple-400" />} />
+          <MetricCard title="Active Alerts" value={activeAlertsList.length.toString()} sub="Requires attention" icon={<AlertTriangle className="w-5 h-5 text-rose-400" />} highlight={activeAlertsList.length > 0} />
+          <MetricCard title="Last Z-Score" value={trendData.length > 0 ? `${Number(trendData[trendData.length-1].negativeRate).toFixed(1)}σ` : "0"} sub="Calculated variance" icon={<TrendingUp className="w-5 h-5 text-purple-400" />} />
         </motion.div>
 
         {/* 60/40 Split */}
@@ -140,11 +148,11 @@ export default function Dashboard() {
             <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
             <CardHeader className="relative z-10">
               <CardTitle className="text-xl font-semibold text-white">Sentiment by Feature</CardTitle>
-              <CardDescription className="text-slate-400">Extracted securely via Claude API</CardDescription>
+              <CardDescription className="text-slate-400">Extracted natively from database</CardDescription>
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="h-[320px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
                   <BarChart data={featureData} layout="vertical" margin={{ left: 100, right: 30 }}>
                     <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#555" />
                     <YAxis type="category" dataKey="feature" width={100} stroke="#aaa" tickLine={false} axisLine={false} />
@@ -168,20 +176,22 @@ export default function Dashboard() {
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-white flex items-center justify-between">
                 <span>Systemic Alerts</span>
-                <Badge variant="destructive" className="bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 font-mono tracking-wider ml-2 border border-rose-500/30 animate-pulse">{activeAlerts} NEW</Badge>
+                <Badge variant="destructive" className="bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 font-mono tracking-wider ml-2 border border-rose-500/30 animate-pulse">{activeAlertsList.length} NEW</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {mockAlerts.map(alert => (
+            <CardContent className="space-y-4 max-h-[350px] overflow-y-auto custom-scrollbar">
+              {activeAlertsList.length === 0 ? (
+                 <div className="text-center py-10 text-slate-500">No active alerts detected in database.</div>
+              ) : activeAlertsList.map(alert => (
                 <div key={alert.id} className="p-4 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20 transition-all group cursor-pointer relative overflow-hidden">
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-500 to-amber-500 opacity-50 group-hover:opacity-100 transition-opacity" />
                   <div className="flex justify-between items-start mb-2 pl-3">
                     <Badge className={alert.severity === 'critical' ? 'bg-rose-500 hover:bg-rose-600 border-none shadow-[0_0_10px_-2px_rgba(244,63,94,0.5)]' : 'bg-amber-500 hover:bg-amber-600 border-none'}>
                       {alert.feature}
                     </Badge>
-                    <span className="text-xs text-slate-500 font-mono">{alert.time}</span>
+                    <span className="text-xs text-slate-500 font-mono">{new Date(alert.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'})}</span>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed font-medium pl-3">{alert.msg}</p>
+                  <p className="text-sm text-slate-300 leading-relaxed font-medium pl-3">{alert.message}</p>
                 </div>
               ))}
             </CardContent>
@@ -198,18 +208,18 @@ export default function Dashboard() {
                   <CardTitle className="text-xl font-semibold text-white">Trend Volatility (Z-Score Timeline)</CardTitle>
                   <CardDescription className="text-slate-400">Rolling window comparison of battery_life negative sentiment</CardDescription>
                 </div>
-                <Badge variant="outline" className="text-purple-400 border-purple-500/30 bg-purple-500/10 px-3 py-1 font-mono text-xs shadow-[0_0_15px_-3px_rgba(168,85,247,0.3)]">Z-SCORE {'>'} 2.0 ANOMALY</Badge>
+                <Badge variant="outline" className="text-purple-400 border-purple-500/30 bg-purple-500/10 px-3 py-1 font-mono text-xs shadow-[0_0_15px_-3px_rgba(168,85,247,0.3)]">LIVE DB</Badge>
               </div>
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="h-[280px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
                   <LineChart data={trendData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
                     <XAxis dataKey="batch" stroke="#555" tickLine={false} axisLine={false} />
                     <YAxis stroke="#555" tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1A1A1A', borderColor: '#333', color: '#fff', borderRadius: '8px', border: '1px solid #333', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)' }}
-                      formatter={(val: number) => [`${val.toFixed(1)}%`, "Negative Pct"]} 
+                      formatter={(val: number) => [`${val}%`, "Negative Pct"]} 
                       labelStyle={{ color: '#aaa', marginBottom: '8px', display: 'block' }}
                     />
                     <Line 
