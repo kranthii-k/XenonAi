@@ -15,6 +15,8 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { generateReport } from "@/lib/utils/export";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { LiveTerminal } from "@/components/dashboard/LiveTerminal";
+import { LiveFeedSimulator } from "@/components/dashboard/LiveFeedSimulator";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Product catalog (static — matches seed data)
@@ -144,6 +146,8 @@ export default function Dashboard() {
       setForecastData(Array.isArray(fcData) && fcData[0]?.data ? fcData[0].data : []);
     } catch (err) {
       console.error('[dashboard] fetch error', err);
+      setFeatureData(EMPTY_FEATURE_DATA);
+      setTrendData(EMPTY_TREND_DATA);
     } finally {
       setIsLoading(false);
     }
@@ -228,6 +232,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <ThemeToggle />
+            <LiveFeedSimulator />
             <Button
               onClick={handleExport}
               variant="outline"
@@ -377,7 +382,7 @@ export default function Dashboard() {
                 <EmptyState message="No feature data yet — trigger NLP analysis on the Ingestion page." />
               ) : (
                 <div className="h-[320px] w-full">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <BarChart data={featureData.slice(0, 8)} layout="vertical" margin={{ left: 110, right: 30 }}>
                       <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke={isDark ? '#555' : '#ccc'} fontSize={11} />
                       <YAxis type="category" dataKey="feature" width={110} stroke={isDark ? '#aaa' : '#666'} tickLine={false} axisLine={false} fontSize={11} />
@@ -459,7 +464,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="h-[240px] w-full">
-                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <LineChart data={trendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                     <XAxis dataKey="batch" stroke={isDark ? '#444' : '#ccc'} tickLine={false} axisLine={false} fontSize={11} />
                     <YAxis stroke={isDark ? '#444' : '#ccc'} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} fontSize={11} />
@@ -508,7 +513,7 @@ export default function Dashboard() {
                   <EmptyState message="Forecast data not yet generated. Trigger NLP analysis to enable forecasting." />
                 ) : (
                   <div className="h-[260px] w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <AreaChart data={forecastData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                         <defs>
                           <linearGradient id="gActual" x1="0" y1="0" x2="0" y2="1">
@@ -564,6 +569,11 @@ export default function Dashboard() {
             </div>
           </motion.div>
         )}
+
+        {/* ── Live Feed Terminal ─────────────────────────────────────────── */}
+        <motion.div variants={item}>
+          <LiveTerminal />
+        </motion.div>
 
       </motion.div>
     </div>

@@ -39,9 +39,9 @@ export async function analyzeReview(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: reviewText })
     });
-    
+
     if (!res.ok) throw new Error("Local ML Server failed");
-    
+
     parsed = await res.json();
   } catch (e) {
     console.error('[analyzer] Python ML request failed. Assuming neutral fallback.', e);
@@ -163,10 +163,10 @@ export async function analyzeBatch(
 
   const productId = inputReviews[0]?.product_id;
   if (productId) {
-    await updateProductTrends(productId).catch(err => 
+    await updateProductTrends(productId).catch(err =>
       console.error('[analyzer] Trend update failed:', err)
     );
-    
+
     // Trigger ARIMA forecasting
     await Forecaster.updateProductForecasts(productId).catch(err =>
       console.error('[analyzer] Forecasting failed:', err)
@@ -217,7 +217,7 @@ export async function updateProductTrends(productId: string): Promise<void> {
   }));
 
   // 3. Run statistical trend detection
-  const trendResults = computeRollingTrends(mappedReviews.reverse()); 
+  const trendResults = computeRollingTrends(mappedReviews.reverse());
   console.log(`[analyzer] Computed trends for ${productId}: ${trendResults.length} features analyzed.`);
 
   // 4. Persist results
@@ -242,7 +242,7 @@ export async function updateProductTrends(productId: string): Promise<void> {
     // Generate alerts for systemic issues or sudden spikes
     if (t.is_anomaly && t.issue_type === 'systemic') {
       const message = `SYSTEMIC ISSUE: ${t.feature.replace(/_/g, ' ')} complaints reached ${Math.round(t.current_negative_pct * 100)}% (up from ${Math.round(t.previous_negative_pct * 100)}%). Affects ${t.unique_users_affected} reviewers in this window.`;
-      
+
       await db.insert(alerts).values({
         id: crypto.randomUUID(),
         productId,
@@ -256,7 +256,7 @@ export async function updateProductTrends(productId: string): Promise<void> {
       });
     } else if (t.is_anomaly && t.issue_type === 'praise_spike') {
       const message = `PRAISE SPIKE: ${t.feature.replace(/_/g, ' ')} positive sentiment rose to ${Math.round(t.current_positive_pct * 100)}%. Positive trend detected!`;
-      
+
       await db.insert(alerts).values({
         id: crypto.randomUUID(),
         productId,
