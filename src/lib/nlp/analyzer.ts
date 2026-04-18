@@ -6,7 +6,7 @@ import { computeRollingTrends } from './trends';
 import { getCohortAndDays } from '../utils/cohorts';
 import { Forecaster } from './forecaster';
 import * as crypto from 'crypto';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { triggerCrisisSwarm, CrisisFeature } from '../utils/webhook';
 
 export interface ClaudeExtractionResult {
@@ -275,17 +275,38 @@ export async function updateProductTrends(productId: string): Promise<boolean> {
     if (t.is_anomaly && t.issue_type === 'systemic') {
       const message = `SYSTEMIC ISSUE: ${t.feature.replace(/_/g, ' ')} complaints reached ${Math.round(t.current_negative_pct * 100)}% (up from ${Math.round(t.previous_negative_pct * 100)}%). Affects ${t.unique_users_affected} reviewers in this window.`;
 
-      await db.insert(alerts).values({
-        id: crypto.randomUUID(),
-        productId,
-        feature: t.feature,
-        severity: t.z_score > 4 ? 'critical' : 'high',
-        message,
-        currentPct: t.current_negative_pct * 100,
-        previousPct: t.previous_negative_pct * 100,
-        delta: t.delta_negative * 100,
-        createdAt: now,
-      });
+      // Upsert: update if alert already exists for this product+feature, insert if new
+      const existing = await db
+        .select({ id: alerts.id })
+        .from(alerts)
+        .where(and(eq(alerts.productId, productId), eq(alerts.feature, t.feature)))
+        .limit(1);
+
+      if (existing.length > 0) {
+        await db
+          .update(alerts)
+          .set({
+            severity: t.z_score > 4 ? 'critical' : 'high',
+            message,
+            currentPct: t.current_negative_pct * 100,
+            previousPct: t.previous_negative_pct * 100,
+            delta: t.delta_negative * 100,
+            createdAt: now,
+          })
+          .where(eq(alerts.id, existing[0].id));
+      } else {
+        await db.insert(alerts).values({
+          id: crypto.randomUUID(),
+          productId,
+          feature: t.feature,
+          severity: t.z_score > 4 ? 'critical' : 'high',
+          message,
+          currentPct: t.current_negative_pct * 100,
+          previousPct: t.previous_negative_pct * 100,
+          delta: t.delta_negative * 100,
+          createdAt: now,
+        });
+      }
 
       // Collect for the single consolidated webhook call below
       crisisAnomalies.push({ feature: t.feature, alertMessage: message });
