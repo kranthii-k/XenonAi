@@ -1,58 +1,54 @@
 import { db } from "@/lib/db";
 import { reviews, flaggedReviews, featureSentiments } from "@/lib/db/schema";
-import { gt, eq } from "drizzle-orm";
+import { gt, eq, desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   const encoder = new TextEncoder();
-  let lastCheck = new Date(Date.now() - 5000).toISOString(); // fetch last 5 seconds initially to populate
+  let lastCheck = new Date(Date.now() - 5000).toISOString();
 
   const stream = new ReadableStream({
     async start(controller) {
       const timer = setInterval(async () => {
         try {
           const now = new Date().toISOString();
-          
-          // Fetch new valid reviews with features
-          const newReviews = db
-            .select({
-              id: reviews.id,
-              text: reviews.text,
-              sentiment: reviews.overallSentiment,
-              createdAt: reviews.createdAt,
-              feature: featureSentiments.feature,
-            })
-            .from(reviews)
-            .leftJoin(featureSentiments, eq(reviews.id, featureSentiments.reviewId))
-            .where(gt(reviews.createdAt, lastCheck))
-            .all();
 
-          // Fetch new flagged reviews
-          const newFlagged = db
-            .select({
-              id: flaggedReviews.id,
-              text: flaggedReviews.rawText,
-              reason: flaggedReviews.flagReason,
-              score: flaggedReviews.similarityScore,
-              flaggedAt: flaggedReviews.flaggedAt,
-            })
-            .from(flaggedReviews)
-            .where(gt(flaggedReviews.flaggedAt, lastCheck))
-            .all();
+          // Fetch new valid reviews using Drizzle query API (async-safe)
+          const newReviews = await db.query.reviews.findMany({
+            where: (r, { gt: gtFn }) => gtFn(r.createdAt, lastCheck),
+            orderBy: (r, { desc: descFn }) => [descFn(r.createdAt)],
+            limit: 10,
+          });
+
+          // Fetch features for those reviews
+          const reviewIds = newReviews.map(r => r.id);
+          const feats = reviewIds.length > 0
+            ? await db.query.featureSentiments.findMany({
+                where: (fs, { inArray }) => inArray(fs.reviewId, reviewIds),
+              })
+            : [];
+
+          // Fetch flagged reviews
+          const newFlagged = await db.query.flaggedReviews.findMany({
+            where: (fr, { gt: gtFn }) => gtFn(fr.flaggedAt, lastCheck),
+            orderBy: (fr, { desc: descFn }) => [descFn(fr.flaggedAt)],
+            limit: 5,
+          });
 
           lastCheck = now;
 
-          const events: any[] = [];
-          
+          const events: object[] = [];
+
           for (const row of newReviews) {
+            const rowFeats = feats.filter(f => f.reviewId === row.id);
             events.push({
               type: 'review',
               id: row.id,
               text: row.text,
-              sentiment: row.sentiment || 'neutral',
-              feature: row.feature || 'General',
+              sentiment: row.overallSentiment || 'neutral',
+              feature: rowFeats[0]?.feature || 'general',
               timestamp: row.createdAt,
             });
           }
@@ -61,25 +57,24 @@ export async function GET(req: Request) {
             events.push({
               type: 'flagged',
               id: row.id,
-              text: row.text,
-              reason: row.reason,
-              score: row.score,
+              text: row.rawText,
+              reason: row.flagReason,
+              score: row.similarityScore,
               timestamp: row.flaggedAt,
             });
           }
 
           if (events.length > 0) {
-            const data = `data: ${JSON.stringify(events)}\n\n`;
-            controller.enqueue(encoder.encode(data));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(events)}\n\n`));
           }
         } catch (error) {
-          console.error('[SSE]', error);
+          console.error('[SSE stream]', error);
         }
       }, 1000);
 
       req.signal.addEventListener('abort', () => {
         clearInterval(timer);
-        controller.close();
+        try { controller.close(); } catch { /* already closed */ }
       });
     }
   });
@@ -87,8 +82,9 @@ export async function GET(req: Request) {
   return new NextResponse(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   });
 }

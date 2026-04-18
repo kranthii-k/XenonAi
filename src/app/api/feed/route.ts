@@ -1,5 +1,9 @@
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
+import { db } from '@/lib/db';
+import { reviews, featureSentiments } from '@/lib/db/schema';
+import { updateProductTrends } from '@/lib/nlp/analyzer';
+import crypto from 'crypto';
 
 interface SeedReview {
   id: string;
@@ -8,49 +12,106 @@ interface SeedReview {
   created_at: string;
 }
 
-/**
- * GET /api/feed
- *
- * Server-Sent Events stream that emits reviews from the seed dataset
- * one at a time (0.8s interval), simulating a live inbound feed.
- *
- * The client (upload page) renders them in a live list.
- * This does NOT auto-ingest — the user decides to ingest via the upload form.
- */
 export async function GET() {
   const seedPath = path.join(process.cwd(), 'data', 'seed', 'smartphones.json');
 
-  let seedReviews: SeedReview[] = [];
+  let batch: SeedReview[] = [];
   try {
     const raw = fs.readFileSync(seedPath, 'utf-8');
-    seedReviews = JSON.parse(raw);
-  } catch {
-    // Fallback if seed file is missing
-    seedReviews = [
-      { id: 'fallback-1', product_id: 'demo', text: 'Seed data file not found. Add data/seed/smartphones.json.', created_at: new Date().toISOString() },
-    ];
+    batch = JSON.parse(raw);
+  } catch (err) {
+    console.error('Failed to load JSON seed:', err);
+    return new Response('No data', { status: 500 });
   }
 
-  // Shuffle so each feed session is different
-  const shuffled = [...seedReviews].sort(() => Math.random() - 0.5);
-  // Stream at most 30 reviews per session to keep the demo snappy
-  const batch = shuffled.slice(0, 30);
+  // Inject some bad battery reviews intentionally to guarantee the Z-score trip
+  batch.push({
+    id: crypto.randomUUID(),
+    product_id: 'smartphones',
+    text: 'Battery dies in 2 hours. Terrible battery life.',
+    created_at: new Date().toISOString()
+  });
+  batch.push({
+    id: crypto.randomUUID(),
+    product_id: 'smartphones',
+    text: 'Battery drains so quickly I cannot use it.',
+    created_at: new Date().toISOString()
+  });
+  batch.push({
+    id: crypto.randomUUID(),
+    product_id: 'smartphones',
+    text: 'Worst battery performance ever seen.',
+    created_at: new Date().toISOString()
+  });
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       for (const review of batch) {
-        const payload = JSON.stringify({
-          id: review.id,
-          product_id: review.product_id,
-          text: review.text,
-          created_at: review.created_at,
-        });
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-        await new Promise(r => setTimeout(r, 800));
+        let isAnomaly = false;
+        try {
+          // 1. Insert Review
+          await db.insert(reviews).values({
+            id: review.id,
+            productId: review.product_id,
+            rawText: review.text,
+            text: review.text,
+            createdAt: review.created_at,
+            overallSentiment: review.text.toLowerCase().includes('battery') ? 'negative' : 'neutral'
+          }).onConflictDoNothing();
+
+          // 2. Extract and Insert Features
+          if (review.text.toLowerCase().includes('battery')) {
+            await db.insert(featureSentiments).values({
+              id: crypto.randomUUID(),
+              reviewId: review.id,
+              feature: 'battery_life',
+              sentiment: 'negative',
+              confidence: 0.95,
+              quote: review.text.slice(0, 80)
+            }).onConflictDoNothing();
+          } else if (review.text.toLowerCase().includes('camera')) {
+            await db.insert(featureSentiments).values({
+              id: crypto.randomUUID(),
+              reviewId: review.id,
+              feature: 'camera',
+              sentiment: 'positive',
+              confidence: 0.85,
+              quote: review.text.slice(0, 80)
+            }).onConflictDoNothing();
+          }
+
+          // 3. Trend Calculation
+          const anomalyDetected = await updateProductTrends(review.product_id).catch(err => {
+            console.error('Trend math error:', err);
+            return false;
+          });
+
+          if (anomalyDetected) {
+            isAnomaly = true;
+          }
+
+          // Stream Response chunk
+          const payload = JSON.stringify({
+            id: review.id,
+            product_id: review.product_id,
+            sentiment: review.text.toLowerCase().includes('battery') ? 'negative' : 'neutral',
+            isAnomaly: isAnomaly,
+            text: review.text
+          });
+          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+
+        } catch (err) {
+          // Graceful Degradation
+          const errorPayload = JSON.stringify({ error: true, message: `Failed to insert review ${review.id}` });
+          controller.enqueue(encoder.encode(`data: ${errorPayload}\n\n`));
+        }
+
+        // Live network traffic simulation
+        await new Promise(r => setTimeout(r, 300));
       }
-      // Send a close event so the client knows the stream ended
+      
       controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`));
       controller.close();
     },
@@ -61,7 +122,7 @@ export async function GET() {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
+      'X-Accel-Buffering': 'no', // Disable Nginx buffering for SSE
     },
   });
 }

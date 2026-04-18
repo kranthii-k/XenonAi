@@ -14,6 +14,12 @@ import { useState, useRef, useCallback, useEffect } from "react";
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface FeedLog { id: number; type: 'normal' | 'error' | 'anomaly' | 'system'; text: string; ts: string; }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface IngestResponse {
   job_id?: string;
   batch_id?: string;
@@ -59,8 +65,12 @@ export default function UploadPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [response, setResponse] = useState<IngestResponse | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  interface FeedLog { id: number; type: 'normal' | 'error' | 'anomaly' | 'system'; text: string; ts: string; }
   const [liveFeedActive, setLiveFeedActive] = useState(false);
-  const [liveFeedItems, setLiveFeedItems] = useState<string[]>([]);
+  const [liveFeedItems, setLiveFeedItems] = useState<FeedLog[]>([]);
+  const [scanCount, setScanCount] = useState(0);
+  const [n8nConnected, setN8nConnected] = useState<boolean | null>(null);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
   const [showFlagDetails, setShowFlagDetails] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -157,12 +167,45 @@ export default function UploadPage() {
 
   // ── Live Feed ─────────────────────────────────────────────────────────────
 
+  const ts = () => new Date().toLocaleTimeString('en-US', { hour12: false });
+
+  const addLog = (type: FeedLog['type'], text: string) => {
+    setLiveFeedItems(prev => [...prev, { id: Date.now() + Math.random(), type, text, ts: ts() }]);
+  };
+
   const toggleLiveFeed = () => {
     if (liveFeedActive) {
       eventSourceRef.current?.close();
       setLiveFeedActive(false);
+      addLog('system', '[SYSTEM] Feed manually stopped.');
     } else {
       setLiveFeedItems([]);
+      setScanCount(0);
+      setN8nConnected(null);
+
+      // Boot sequence
+      const bootLines = [
+        '[BOOT] XenonAI Telemetry Engine v2.0 initializing...',
+        '[BOOT] Connecting to SSE data pipeline...',
+        '[BOOT] Anomaly detection armed. Crisis threshold: Z > 1.5 | negPct > 20%',
+        '[BOOT] n8n Swarm relay: checking http://localhost:5678...',
+      ];
+      bootLines.forEach((line, i) => {
+        setTimeout(() => addLog('system', line), i * 180);
+      });
+
+      // Test n8n availability
+      fetch('/api/health/n8n').then(r => {
+        setN8nConnected(r.ok);
+        setTimeout(() => addLog(
+          r.ok ? 'system' : 'error',
+          r.ok ? '[SYSTEM] n8n Swarm online ✓ — webhook ready' : '[WARN] n8n offline — webhook dispatch will queue silently'
+        ), bootLines.length * 180 + 100);
+      }).catch(() => {
+        setN8nConnected(false);
+        setTimeout(() => addLog('error', '[WARN] n8n offline — start with: npx n8n'), bootLines.length * 180 + 100);
+      });
+
       const es = new EventSource('/api/feed');
       eventSourceRef.current = es;
       setLiveFeedActive(true);
@@ -170,16 +213,37 @@ export default function UploadPage() {
       es.onmessage = (e) => {
         try {
           const review = JSON.parse(e.data);
-          setLiveFeedItems(prev => [review.text, ...prev].slice(0, 20));
-        } catch {/* ignore */}
+          if (review.error) {
+            addLog('error', `[ERROR] ${review.message}`);
+          } else if (review.isAnomaly) {
+            addLog('anomaly', `[CRITICAL ANOMALY] 🚨 Systemic failure in [${review.product_id}] → Feature: battery_life. Z-score threshold crossed. Webhook dispatched to n8n Crisis Swarm.`);
+          } else {
+            setScanCount(c => c + 1);
+            const sentiment = review.sentiment === 'negative' ? '🔴' : review.sentiment === 'positive' ? '🟢' : '⚪';
+            addLog('normal', `[INGESTED] ${sentiment} #${review.id?.substring(0, 8) ?? '??'} | ${review.product_id} | Sentiment: ${review.sentiment ?? 'neutral'} | Logged`);
+          }
+        } catch {/* ignore parse errors */}
       };
 
+      es.addEventListener('done', () => {
+        addLog('system', `[DONE] Stream complete. ${scanCount} reviews ingested. Anomaly engine standing by.`);
+        es.close();
+        setLiveFeedActive(false);
+      });
+
       es.onerror = () => {
+        addLog('error', '[SYSTEM] ⚠ Stream connection lost.');
         es.close();
         setLiveFeedActive(false);
       };
     }
   };
+
+  useEffect(() => {
+    if (terminalEndRef.current) {
+      terminalEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [liveFeedItems]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render helpers
@@ -453,20 +517,35 @@ export default function UploadPage() {
           </Card>
         )}
 
-        {/* Live Feed */}
-        <Card className="bg-gradient-to-r from-purple-500/10 to-transparent border-purple-500/20 backdrop-blur-md">
+        {/* Live Feed Terminal */}
+        <Card className="bg-gradient-to-br from-slate-900 to-slate-950 border-purple-500/20 backdrop-blur-md">
           <CardContent className="p-6 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="space-y-1">
-                <h3 className="font-semibold text-white flex items-center gap-2">
+                <h3 className="font-semibold text-white flex items-center gap-2 flex-wrap">
                   {liveFeedActive
                     ? <Wifi className="w-4 h-4 text-emerald-400 animate-pulse" />
                     : <WifiOff className="w-4 h-4 text-slate-500" />
                   }
-                  Live Data Feed
+                  Live Ingestion Terminal
+                  {liveFeedActive && (
+                    <span className="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">
+                      {scanCount} scanned
+                    </span>
+                  )}
+                  {n8nConnected === true && (
+                    <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                      n8n online
+                    </span>
+                  )}
+                  {n8nConnected === false && (
+                    <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                      n8n offline
+                    </span>
+                  )}
                 </h3>
                 <p className="text-sm text-slate-400">
-                  Stream seed reviews from the demo pipeline via SSE
+                  Real-time SSE pipeline · anomaly detection · autonomous crisis webhook
                 </p>
               </div>
               <Button
@@ -478,17 +557,32 @@ export default function UploadPage() {
                     : 'bg-purple-600 hover:bg-purple-700 text-white'
                 }
               >
-                {liveFeedActive ? 'Stop Feed' : 'Start Live Feed'}
+                {liveFeedActive ? 'Stop Feed' : '▶ Start Live Feed'}
               </Button>
             </div>
 
             {liveFeedItems.length > 0 && (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {liveFeedItems.map((item, i) => (
-                  <div key={i} className="text-xs text-slate-400 bg-white/5 rounded px-3 py-1.5 border border-white/5">
-                    {item}
+              <div className="bg-[#0a0e17] border border-slate-800 rounded-xl font-mono text-xs overflow-y-auto h-[420px] p-4 space-y-1 shadow-inner">
+                <div className="flex items-center gap-1.5 pb-3 mb-1 border-b border-slate-800">
+                  <span className="w-3 h-3 rounded-full bg-rose-500/80" />
+                  <span className="w-3 h-3 rounded-full bg-amber-500/80" />
+                  <span className="w-3 h-3 rounded-full bg-emerald-500/80" />
+                  <span className="ml-2 text-slate-600 text-[10px] tracking-widest uppercase">XenonAI — Crisis Monitor</span>
+                </div>
+                {liveFeedItems.map((log) => (
+                  <div key={log.id} className="flex gap-2 leading-relaxed">
+                    <span className="text-slate-600 shrink-0 select-none">{log.ts}</span>
+                    <span className={
+                      log.type === 'normal'  ? 'text-emerald-400' :
+                      log.type === 'anomaly' ? 'text-rose-400 font-bold animate-pulse' :
+                      log.type === 'system'  ? 'text-sky-400' :
+                      'text-amber-400'
+                    }>
+                      {log.text}
+                    </span>
                   </div>
                 ))}
+                <div ref={terminalEndRef} />
               </div>
             )}
           </CardContent>

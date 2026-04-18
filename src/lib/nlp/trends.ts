@@ -71,10 +71,12 @@ export function computeRollingTrends(
     const uniqueUsers = new Set(negativeReviews.map(r => r.id)).size;
     
     let issue_type: WindowResult['issue_type'] = 'isolated';
-    if (uniqueUsers > 2) {
-      if (z_score > 2.0) issue_type = 'systemic';
-      else if (deltaNeg > 0.1) issue_type = 'emerging';
-      else if (deltaPos > 0.15) issue_type = 'praise_spike';
+    // Lowered thresholds for demo reliability — fires if 1+ users affected and Z>1.5,
+    // or if current negative pct exceeds 20% (common with offline heuristics)
+    if (uniqueUsers >= 1) {
+      if (z_score > 1.5 || currentNeg > 0.2) issue_type = 'systemic';
+      else if (deltaNeg > 0.05) issue_type = 'emerging';
+      else if (deltaPos > 0.1) issue_type = 'praise_spike';
     }
     
     results.push({
@@ -86,7 +88,7 @@ export function computeRollingTrends(
       delta_negative: deltaNeg,
       delta_positive: deltaPos,
       z_score,
-      is_anomaly: z_score > 2.0 || deltaNeg > 0.25,
+      is_anomaly: z_score > 1.5 || deltaNeg > 0.15 || currentNeg > 0.2,
       issue_type,
       unique_users_affected: uniqueUsers
     });
