@@ -282,14 +282,14 @@ export default function UploadPage() {
           >
             <option value="" className="bg-slate-900">— Select a product —</option>
             <optgroup label="Electronics" className="bg-slate-900">
-              <option value="smartphones" className="bg-slate-900">📱 Smartphones</option>
-              <option value="earbuds" className="bg-slate-900">🎧 Earbuds</option>
-              <option value="laptops" className="bg-slate-900">💻 Laptops</option>
+              <option value="smartphones" className="bg-slate-900">Smartphones</option>
+              <option value="earbuds" className="bg-slate-900">Earbuds</option>
+              <option value="laptops" className="bg-slate-900">Laptops</option>
             </optgroup>
             <optgroup label="Home Appliances" className="bg-slate-900">
-              <option value="geyser" className="bg-slate-900">🔥 Geyser</option>
-              <option value="refrigerator" className="bg-slate-900">🧊 Refrigerator</option>
-              <option value="microwave-oven" className="bg-slate-900">📡 Microwave Oven</option>
+              <option value="geyser" className="bg-slate-900">Geyser</option>
+              <option value="refrigerator" className="bg-slate-900">Refrigerator</option>
+              <option value="microwave-oven" className="bg-slate-900">Microwave Oven</option>
             </optgroup>
           </select>
         </div>

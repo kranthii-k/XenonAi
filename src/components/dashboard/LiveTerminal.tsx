@@ -2,25 +2,30 @@
 
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Terminal, ShieldAlert, Cpu } from "lucide-react";
+import { Terminal, ShieldAlert } from "lucide-react";
 
 interface StreamEvent {
   type: "review" | "flagged";
   id: string;
   text: string;
-  sentiment?: string; // positive, negative, neutral
+  sentiment?: string;
   feature?: string;
-  reason?: string; // bot_pattern, near_duplicate, exact_duplicate
+  reason?: string;
   score?: number | null;
   timestamp: string;
 }
 
 export function LiveTerminal() {
   const [messages, setMessages] = useState<StreamEvent[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Ref to the scrollable terminal BODY — NOT to a bottom sentinel
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
+  // Whether the user is currently near the bottom (auto-scroll eligible)
+  const isNearBottom = useRef(true);
+  // Whether we've done the one-time initial scroll to the terminal
+  const hasScrolledToTerminal = useRef(false);
 
   useEffect(() => {
-    // We only create one EventSource connection
     const evtSource = new EventSource("/api/stream");
 
     evtSource.onmessage = (event) => {
@@ -29,7 +34,6 @@ export function LiveTerminal() {
         if (Array.isArray(rawArray)) {
           setMessages((prev) => {
             const newMsgs = [...prev, ...rawArray];
-            // Keep maximum of 100 max entries in terminal to prevent memory bloat
             return newMsgs.slice(-100);
           });
         }
@@ -38,20 +42,38 @@ export function LiveTerminal() {
       }
     };
 
-    return () => {
-      evtSource.close();
-    };
+    return () => evtSource.close();
   }, []);
 
+  // Track whether the user is near the bottom of the terminal scroll area
+  const handleScroll = () => {
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottom.current = distanceFromBottom < 80;
+  };
+
   useEffect(() => {
-    // Auto-scroll to bottom
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+    if (messages.length === 0) return;
+
+    const el = scrollBodyRef.current;
+    if (!el) return;
+
+    // One-time: on very first message, scroll the PAGE to the terminal so the
+    // user can see it — then never touch window scroll again.
+    if (!hasScrolledToTerminal.current) {
+      el.closest('[data-terminal-wrapper]')?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      hasScrolledToTerminal.current = true;
+    }
+
+    // Auto-scroll INSIDE the terminal box only if user is already near the bottom
+    if (isNearBottom.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
 
   return (
-    <div className="w-full bg-[#0a0a0a] border border-[#222] rounded-xl overflow-hidden shadow-2xl mt-6 font-mono relative">
+    <div data-terminal-wrapper className="w-full bg-[#0a0a0a] border border-[#222] rounded-xl overflow-hidden shadow-2xl mt-6 font-mono relative">
       {/* Terminal Header */}
       <div className="flex items-center px-4 py-2 bg-[#141414] border-b border-[#222]">
         <div className="flex gap-1.5 mr-4">
@@ -64,21 +86,25 @@ export function LiveTerminal() {
           <span>xenon-core-ingestion-feed - bash (80x24)</span>
         </div>
         <div className="ml-auto flex items-center gap-2 text-xs">
-           <span className="flex h-2 w-2 relative">
-             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-           </span>
-           <span className="text-emerald-500 uppercase tracking-widest font-bold">LIVE</span>
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span className="text-emerald-500 uppercase tracking-widest font-bold">LIVE</span>
         </div>
       </div>
 
-      {/* Terminal Body */}
-      <div className="p-4 h-64 overflow-y-auto custom-scrollbar text-xs leading-relaxed space-y-1.5 select-text">
+      {/* Terminal Body — scrollable, scroll events tracked here */}
+      <div
+        ref={scrollBodyRef}
+        onScroll={handleScroll}
+        className="p-4 h-64 overflow-y-auto custom-scrollbar text-xs leading-relaxed space-y-1.5 select-text"
+      >
         <div className="text-slate-500 mb-4 opacity-70">
           <p>Xenon AI Ingestion Engine v2.0</p>
           <p>Listening for real-time telemetry on port 3000...</p>
         </div>
-        
+
         <AnimatePresence>
           {messages.map((msg, i) => (
             <motion.div
@@ -104,7 +130,7 @@ export function LiveTerminal() {
                     <ShieldAlert size={12} /> [BLOCKED]
                   </span>
                   <span className="mx-1 text-orange-400">
-                     {msg.reason === "bot_pattern" ? "Spam Detected" : msg.reason === "exact_duplicate" ? "Duplicate Blocked" : "Near Duplicate"}
+                    {msg.reason === "bot_pattern" ? "Spam Detected" : msg.reason === "exact_duplicate" ? "Duplicate Blocked" : "Near Duplicate"}
                   </span>
                   {msg.score !== null && msg.score !== undefined && (
                     <>
@@ -119,14 +145,12 @@ export function LiveTerminal() {
             </motion.div>
           ))}
         </AnimatePresence>
-        
+
         {/* Blinking cursor */}
         <div className="flex items-center gap-2 mt-2">
-           <span className="text-blue-400 font-bold">xenon@server:~$</span>
-           <span className="w-2 h-4 bg-slate-400 animate-pulse"></span>
+          <span className="text-blue-400 font-bold">xenon@server:~$</span>
+          <span className="w-2 h-4 bg-slate-400 animate-pulse"></span>
         </div>
-        
-        <div ref={bottomRef} />
       </div>
     </div>
   );

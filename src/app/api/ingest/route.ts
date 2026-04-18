@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { flaggedReviews, ingestionJobs } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 import { runDeduplicationPipeline } from '@/lib/nlp/dedup';
 import { analyzeBatch } from '@/lib/nlp/analyzer';
 import * as crypto from 'crypto';
@@ -239,8 +240,7 @@ export async function POST(req: Request) {
           errorMessage: String(err),
           updatedAt: new Date().toISOString(),
         })
-        // @ts-expect-error drizzle eq import
-        .where((t: typeof ingestionJobs) => t.id === jobId);
+        .where(eq(ingestionJobs.id, jobId));
     });
 
     return Response.json({

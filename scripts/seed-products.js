@@ -285,8 +285,8 @@ for (const p of PRODUCTS) {
 // ─────────────────────────────────────────────────────────────────────────────
 const checkExisting = db.prepare(`SELECT COUNT(*) as count FROM reviews WHERE product_id = ?`);
 const insertReview = db.prepare(`
-  INSERT OR IGNORE INTO reviews (id, product_id, text, created_at, batch_id, language)
-  VALUES (@id, @product_id, @text, @created_at, @batch_id, 'en')
+  INSERT OR IGNORE INTO reviews (id, product_id, raw_text, text, created_at, batch_id, language)
+  VALUES (@id, @product_id, @raw_text, @text, @created_at, @batch_id, 'en')
 `);
 
 const batchInsert = db.transaction((productId, reviews) => {
@@ -298,6 +298,7 @@ const batchInsert = db.transaction((productId, reviews) => {
     insertReview.run({
       id: crypto.randomUUID(),
       product_id: productId,
+      raw_text: reviews[i],
       text: reviews[i],
       created_at: ts,
       batch_id: batchId,

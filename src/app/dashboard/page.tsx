@@ -108,19 +108,24 @@ export default function Dashboard() {
     setIsLoading(true);
     try {
       const qs = productId ? `?product_id=${productId}` : '';
-      const fcQs = productId ? `?product_id=${productId}&feature=battery_life` : '';
 
-      const [fRes, tRes, aRes, fcRes] = await Promise.all([
+      const [fRes, tRes, aRes] = await Promise.all([
         fetch(`/api/features${qs}`),
         fetch(`/api/trends${qs}`),
         fetch(`/api/alerts${qs}`),
-        productId ? fetch(`/api/forecasts${fcQs}`) : Promise.resolve(null),
       ]);
 
       const fData = await fRes.json();
       const tData = await tRes.json();
       const aData = await aRes.json();
-      const fcData = fcRes ? await fcRes.json() : [];
+
+      // Fetch forecast using the first real feature for this product (never hardcode battery_life)
+      let fcData: any[] = [];
+      if (productId && fData?.features?.length > 0) {
+        const topFeature = fData.features[0].feature;
+        const fcRes = await fetch(`/api/forecasts?product_id=${productId}&feature=${topFeature}`);
+        fcData = fcRes.ok ? await fcRes.json() : [];
+      }
 
       if (fData?.features) {
         setFeatureData(fData.features.length > 0 ? fData.features : EMPTY_FEATURE_DATA);
@@ -133,11 +138,30 @@ export default function Dashboard() {
       }
 
       if (Array.isArray(tData) && tData.length > 0) {
-        setTrendData(tData.map((t: any) => ({
-          batch: `B-${String(t.batchIndex).slice(-4)}`,
-          negativeRate: Number(t.negativePct).toFixed(1),
-          isAnomaly: t.isAnomaly,
-        })));
+        // Group rows by batchIndex — there is one row per feature per batch.
+        // We need ONE point per batch on the chart, using the average negativePct
+        // across all features for that batch.
+        const batchMap = new Map<number, { total: number; count: number; isAnomaly: boolean }>();
+        for (const t of tData) {
+          const key = t.batchIndex as number;
+          const existing = batchMap.get(key);
+          if (existing) {
+            existing.total += Number(t.negativePct);
+            existing.count += 1;
+            existing.isAnomaly = existing.isAnomaly || Boolean(t.isAnomaly);
+          } else {
+            batchMap.set(key, { total: Number(t.negativePct), count: 1, isAnomaly: Boolean(t.isAnomaly) });
+          }
+        }
+        // Sort batches chronologically and produce chart-ready objects
+        const aggregated = Array.from(batchMap.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([batchIndex, { total, count, isAnomaly }]) => ({
+            batch: `B-${String(batchIndex).slice(-4)}`,
+            negativeRate: parseFloat((total / count).toFixed(1)),
+            isAnomaly,
+          }));
+        setTrendData(aggregated);
       } else {
         setTrendData(EMPTY_TREND_DATA);
       }
@@ -179,7 +203,7 @@ export default function Dashboard() {
     generateReport(selectedProduct?.name ?? "All Products", {
       features: featureData.map(f => ({
         feature: f.feature, positive_pct: f.positive,
-        negative_pct: f.negative, avg_confidence: 0.95
+        negative_pct: f.negative, avg_confidence: f.confidence ?? 0.95
       })),
       alerts: activeAlertsList,
     });
@@ -232,7 +256,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <ThemeToggle />
-            <LiveFeedSimulator />
+            <LiveFeedSimulator productId={selectedProductId} />
             <Button
               onClick={handleExport}
               variant="outline"
@@ -466,18 +490,34 @@ export default function Dashboard() {
               <div className="h-[240px] w-full">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <LineChart data={trendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#ffffff08' : '#00000008'} vertical={false} />
                     <XAxis dataKey="batch" stroke={isDark ? '#444' : '#ccc'} tickLine={false} axisLine={false} fontSize={11} />
-                    <YAxis stroke={isDark ? '#444' : '#ccc'} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} fontSize={11} />
+                    <YAxis stroke={isDark ? '#444' : '#ccc'} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} fontSize={11} domain={[0, 'auto']} />
                     <Tooltip
                       contentStyle={{ backgroundColor: isDark ? '#1a1a1a' : '#fff', borderColor: isDark ? '#333' : '#eee', color: isDark ? '#fff' : '#111', borderRadius: '10px', fontSize: 12 }}
-                      formatter={(val: number) => [`${val}%`, "Negative %"]}
+                      labelStyle={{ fontWeight: 600, marginBottom: 4 }}
+                      formatter={(val: number, _name: string, props: any) => {
+                        const anomaly = props?.payload?.isAnomaly;
+                        return [`${val}%${anomaly ? ' ⚠ Anomaly' : ''}`, 'Avg Negative Rate'];
+                      }}
                     />
                     <Line
                       type="monotone"
                       dataKey="negativeRate"
                       stroke={accentColor}
                       strokeWidth={2.5}
-                      dot={{ fill: accentColor, r: 3, strokeWidth: 0 }}
+                      dot={(props: any) => {
+                        const { cx, cy, payload } = props;
+                        if (payload?.isAnomaly) {
+                          return (
+                            <g key={`dot-${cx}-${cy}`}>
+                              <circle cx={cx} cy={cy} r={7} fill="#F43F5E" fillOpacity={0.2} />
+                              <circle cx={cx} cy={cy} r={4} fill="#F43F5E" stroke="#fff" strokeWidth={1.5} />
+                            </g>
+                          );
+                        }
+                        return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={3} fill={accentColor} stroke="none" />;
+                      }}
                       activeDot={{ r: 6, fill: accentColor, stroke: '#fff', strokeWidth: 2 }}
                       animationDuration={1200}
                     />

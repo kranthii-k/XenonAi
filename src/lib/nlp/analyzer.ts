@@ -7,7 +7,7 @@ import { getCohortAndDays } from '../utils/cohorts';
 import { Forecaster } from './forecaster';
 import * as crypto from 'crypto';
 import { eq, desc } from 'drizzle-orm';
-import { triggerCrisisSwarm } from '../utils/webhook';
+import { triggerCrisisSwarm, CrisisFeature } from '../utils/webhook';
 
 export interface ClaudeExtractionResult {
   overall_sentiment: string;
@@ -120,7 +120,7 @@ export async function analyzeBatch(
       const launchDate = product?.launchDate ?? new Date().toISOString();
       const { cohort, daysSinceLaunch } = getCohortAndDays(review.created_at, launchDate);
 
-      const result = await analyzeReview(review.text, review.rawText);
+      const result = await analyzeReview(review.rawText, review.rawText);
 
       await db
         .insert(reviews)
@@ -253,6 +253,9 @@ export async function updateProductTrends(productId: string): Promise<boolean> {
   const now = new Date().toISOString();
   const batchIndex = Math.floor(Date.now() / 1000); // Unique index for this trend snapshot
 
+  // Collect all systemic anomalies — fire ONE consolidated webhook after the loop
+  const crisisAnomalies: CrisisFeature[] = [];
+
   for (const t of trendResults) {
     // Only store trends with significant volume or shifts to keep DB clean
     if (t.current_negative_pct > 0 || t.current_positive_pct > 0) {
@@ -284,8 +287,8 @@ export async function updateProductTrends(productId: string): Promise<boolean> {
         createdAt: now,
       });
 
-      // Background webhook trigger: Non-blocking fire-and-forget connection to n8n swarm
-      triggerCrisisSwarm(productId, t.feature, message);
+      // Collect for the single consolidated webhook call below
+      crisisAnomalies.push({ feature: t.feature, alertMessage: message });
       hasSystemicAnomaly = true;
     } else if (t.is_anomaly && t.issue_type === 'praise_spike') {
       const message = `PRAISE SPIKE: ${t.feature.replace(/_/g, ' ')} positive sentiment rose to ${Math.round(t.current_positive_pct * 100)}%. Positive trend detected!`;
@@ -302,6 +305,11 @@ export async function updateProductTrends(productId: string): Promise<boolean> {
         createdAt: now,
       });
     }
+  }
+
+  // Fire ONE consolidated crisis webhook for this entire batch (not one per feature)
+  if (crisisAnomalies.length > 0) {
+    triggerCrisisSwarm(productId, crisisAnomalies);
   }
 
   return hasSystemicAnomaly;
