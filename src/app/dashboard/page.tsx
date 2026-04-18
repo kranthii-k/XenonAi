@@ -17,6 +17,7 @@ import { generateReport } from "@/lib/utils/export";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LiveTerminal } from "@/components/dashboard/LiveTerminal";
 import { LiveFeedSimulator } from "@/components/dashboard/LiveFeedSimulator";
+import { ScrapedDataButton } from "@/components/dashboard/ScrapedDataButton";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Product catalog (static — matches seed data)
@@ -257,6 +258,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-3 flex-wrap">
             <ThemeToggle />
             <LiveFeedSimulator productId={selectedProductId} />
+            <ScrapedDataButton />
             <Button
               onClick={handleExport}
               variant="outline"

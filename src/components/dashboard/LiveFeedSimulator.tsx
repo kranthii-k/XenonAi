@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Zap } from "lucide-react";
+import { Play, Square, Zap } from "lucide-react";
 
 interface LiveFeedSimulatorProps {
   productId: string | null;
@@ -13,25 +13,37 @@ export function LiveFeedSimulator({ productId }: LiveFeedSimulatorProps) {
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
 
+  // Cancellation flag — set to true when the user hits Stop
+  const stoppedRef = useRef(false);
+
   const noProduct = !productId;
 
-  const startSimulation = async () => {
+  // ── Stop ──────────────────────────────────────────────────────────────────
+  const stopSimulation = useCallback(() => {
+    stoppedRef.current = true;
+  }, []);
+
+  // ── Start ─────────────────────────────────────────────────────────────────
+  const startSimulation = useCallback(async () => {
     if (noProduct || isRunning) return;
+
+    stoppedRef.current = false;
     setIsRunning(true);
     setProgress(0);
     setTotal(0);
 
     try {
+      // 1. Fetch the demo corpus for the selected product
       const res = await fetch(`/api/demo-reviews?product_id=${productId}`);
       if (!res.ok) {
-        const err = await res.json();
-        console.error("[LiveFeedSimulator] API error:", err);
+        console.error("[LiveFeedSimulator] Failed to fetch demo reviews:", await res.json());
         return;
       }
 
       const raw = await res.json();
-
       let reviews: string[] = [];
+
+      // Accept both string[] and {text: string}[] from the API
       if (Array.isArray(raw)) {
         if (typeof raw[0] === "string") {
           reviews = raw as string[];
@@ -47,9 +59,14 @@ export function LiveFeedSimulator({ productId }: LiveFeedSimulatorProps) {
 
       setTotal(reviews.length);
 
+      // 2. Simulated real-time API feed — one review per HTTP request, 800ms apart
       for (let i = 0; i < reviews.length; i++) {
+        // Honour the stop signal before every request
+        if (stoppedRef.current) break;
+
         const formData = new FormData();
         formData.append("product_id", productId!);
+        // Single review as the "text" field — ingest splits on \n, so one line = one review
         formData.append("text", reviews[i]);
 
         try {
@@ -59,32 +76,31 @@ export function LiveFeedSimulator({ productId }: LiveFeedSimulatorProps) {
         }
 
         setProgress(i + 1);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        // Realistic delay — checked again right before sleeping so Stop is instant
+        if (!stoppedRef.current) {
+          await new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 800);
+            // Poll the flag every 50ms so Stop cancels the sleep quickly
+            const poll = setInterval(() => {
+              if (stoppedRef.current) {
+                clearTimeout(timeout);
+                clearInterval(poll);
+                resolve();
+              }
+            }, 50);
+          });
+        }
       }
     } catch (err) {
       console.error("[LiveFeedSimulator] Error:", err);
     } finally {
+      stoppedRef.current = false;
       setIsRunning(false);
     }
-  };
+  }, [productId, isRunning, noProduct]);
 
-  // ── Running state ────────────────────────────────────────────────────────
-  if (isRunning) {
-    return (
-      <Button
-        disabled
-        className="font-semibold tracking-wide flex items-center gap-2 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/15 cursor-default"
-      >
-        <span className="relative flex h-2.5 w-2.5 mr-1">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-        </span>
-        Streaming ({progress}/{total})…
-      </Button>
-    );
-  }
-
-  // ── No product selected — clearly visible but disabled ───────────────────
+  // ── No product selected ───────────────────────────────────────────────────
   if (noProduct) {
     return (
       <Button
@@ -100,7 +116,21 @@ export function LiveFeedSimulator({ productId }: LiveFeedSimulatorProps) {
     );
   }
 
-  // ── Product selected — fully active ─────────────────────────────────────
+  // ── Running — show Stop button ────────────────────────────────────────────
+  if (isRunning) {
+    return (
+      <Button
+        onClick={stopSimulation}
+        className="font-semibold tracking-wide flex items-center gap-2
+          bg-rose-600 hover:bg-rose-700 text-white transition-colors"
+      >
+        <Square className="w-3.5 h-3.5 fill-white" />
+        Stop ({progress}/{total})
+      </Button>
+    );
+  }
+
+  // ── Idle — ready to start ─────────────────────────────────────────────────
   return (
     <Button
       onClick={startSimulation}
